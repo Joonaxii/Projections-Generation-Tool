@@ -1,0 +1,3 @@
+[submodule "ext/J-Core"]
+	path = ext/J-Core
+	url = https://github.com/Joonaxii/J-Core.git
