@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 #include <limits>
@@ -9,20 +10,23 @@
 #include <J-Core/IO/IOUtils.h>
 #include <J-Core/IO/ImageUtils.h>
 #include <J-Core/IO/Image.h>
+#include <J-Core/IO/AudioUtils.h>
+#include <J-Core/IO/Audio.h>
 #include <J-Core/IO/Stream.h>
-#include <J-Core/Util/DataUtilities.h>
-#include <J-Core/Util/StringHelpers.h>
+#include <J-Core/Util/DataUtils.h>
+#include <J-Core/Util/StringUtils.h>
 #include <J-Core/Util/EnumUtils.h>
 #include <J-Core/Util/Span.h>
 #include <J-Core/Rendering/Atlas.h>
 #include <J-Core/Util/DataFormatUtils.h>
+#include <J-Core/Util/DataUtils.h>
 #include <J-Core/Util/PoolAllocator.h>
 
 #include <smmintrin.h>
 #include <J-Core/Util/AlignmentAllocator.h>
 
 namespace Projections {
-    static constexpr uint32_t PROJ_GEN_VERSION = 1;
+    static constexpr int32_t PROJ_GEN_VERSION = 2;
 
     namespace detail {
         static inline void maskSimdIndices(const __m128i& simd, __m128i& buffer) {
@@ -65,73 +69,73 @@ namespace Projections {
         }
     }
 
-    enum AtlasExportType {
-        A_EXP_PNG,
-        A_EXP_DDS,
-        A_EXP_JTEX,
-    };
+    struct alignas(16) CRCBlocks {
+        uint32_t crcs[8]{ 0 };
 
-    enum AtlasExportSize {
-        A_EXP_S_RGBA32,
-        A_EXP_S_RGBA4444,
-    };
-
-    struct OutputFormat {
-        AtlasExportType type{ A_EXP_PNG };
-        AtlasExportSize size{ A_EXP_S_RGBA32 };
-
-        void reset() {
-            type = A_EXP_PNG;
-            size = A_EXP_S_RGBA32;
+        void clear() {
+            memset(crcs, 0, sizeof(crcs));
         }
 
-        const char* getExtension() const {
-            switch (type) {
-                default: return ".png";
-                case A_EXP_DDS: return ".dds";
-                case A_EXP_JTEX: return ".jtex";
+        bool from(const uint8_t* data, size_t size) {
+            clear();
+            if (size < 0 || !data) { return false; }
+            size_t chunkSize = Math::max(size >> 3, 1ULL);
+
+            size_t left = size;
+            size_t ind = 0;
+            uint32_t crcV = 0x00;
+            while (left > 0 && ind < 8) {
+                size_t len = Math::min(left, chunkSize);
+                crcV |= (crcs[ind++] = JCore::Data::calcuateCRC(data, len));
+                data += len;
+                left -= len;
             }
+            return crcV != 0x00;
         }
 
-        AtlasExportSize getSize() const {
-            return type == A_EXP_PNG ? A_EXP_S_RGBA32 : size;
+        const bool operator==(const CRCBlocks& other) const {
+            const __m128i* lhs = reinterpret_cast<const __m128i*>(crcs);
+            const __m128i* rhs = reinterpret_cast<const __m128i*>(other.crcs);
+            return (
+                detail::getSimdMask(_mm_cmpeq_epi32(lhs[0], rhs[0])) &
+                detail::getSimdMask(_mm_cmpeq_epi32(lhs[1], rhs[1]))
+                ) == 0xFFFFFFFFU;
+
         }
 
-        void write(json& jsonF) const {
-            jsonF["type"] = int32_t(type);
-            jsonF["size"] = int32_t(size);
-        }
+        const bool operator!=(const CRCBlocks& other) const {
+            const __m128i* lhs = reinterpret_cast<const __m128i*>(crcs);
+            const __m128i* rhs = reinterpret_cast<const __m128i*>(other.crcs);
+            return (
+                detail::getSimdMask(_mm_cmpeq_epi32(lhs[0], rhs[0])) &
+                detail::getSimdMask(_mm_cmpeq_epi32(lhs[1], rhs[1]))
+                ) != 0xFFFFFFFFU;
 
-        void read(json& jsonF) {
-            reset();
-            if (jsonF.is_object()) {
-                type = AtlasExportType(jsonF.value<int32_t>("type", int32_t(A_EXP_PNG)));
-                size = AtlasExportSize(jsonF.value<int32_t>("size", int32_t(A_EXP_S_RGBA32)));
-            }
         }
     };
 
-    enum AnimSpeedType : uint8_t {
-        ANIM_S_Ticks,
-        ANIM_S_Duration,
-        ANIM_S_COUNT,
+    enum TexMode : uint8_t {
+        TEX_None = 0x00,
+        TEX_PNG,
+        TEX_DDS,
+        TEX_JTEX,
+        TEX_RLE,
+
+        __TEX_COUNT
     };
 
-    enum DropType : uint8_t {
-        DROP_Null,
-        DROP_Enemy,
-        DROP_Chest,
-        DROP_TravelingMerchant,
-
-        DROP_COUNT,
+    enum PoolType : uint8_t {
+        Pool_None,
+        Pool_Trader,
+        Pool_NPC,
+        Pool_FishingQuest,
+        Pool_Treasure,
+        Pool_COUNT,
     };
 
-    enum TileDrawLayer : uint8_t {
-        TDRAW_BehindWalls,
-        TDRAW_BehindTiles,
-        TDRAW_AfterTiles,
-
-        TDRAW_COUNT
+    enum ProjectionLimits : uint64_t {
+        PROJ_MAX_LAYERS = 16,
+        PROJ_MAX_RESOLUTION = 1024,
     };
 
     enum RarityType : uint8_t {
@@ -140,6 +144,22 @@ namespace Projections {
         RARITY_Advanced,
         RARITY_Expert,
         RARITY_Master,
+    };
+
+    enum PMaterialFlags : uint8_t {
+        PMat_None = 0x00,
+        PMat_AllowUpload = 0x01,
+        PMat_AllowShimmer = 0x02,
+    };
+
+    enum PLayerFlags : uint32_t {
+        PLa_None = 0x00,
+        PLa_DefaultState = 0x01,
+        PLa_IsTransparent = 0x10000,
+    };
+
+    enum PFrameFlags : uint32_t {
+        PFrm_None = 0x00,
     };
 
     enum NPCID : int32_t {
@@ -991,36 +1011,61 @@ namespace Projections {
         WCF_DWNPumpkinMoon = 0x00800000000000,
         WCF_DWNFrostMoon = 0x01000000000000,
 
-        //WCF_DWNFrostMoon = 0x01000000000000,
         WCF_ValidOnGen = WCF_IsExpert | WCF_IsMaster,
     };
 
     enum AnimationMode : uint8_t {
-        ANIM_None = 0x00,
-        ANIM_Loop = 0x01,
-        ANIM_Follow = 0x02,
+        ANIM_FrameSet = 0x00,
+        ANIM_LoopVideo = 0x01,
+        ANIM_LoopAudio = 0x02,
         ANIM_COUNT,
     };
 
-    enum TileDrawMode : uint8_t {
-        TDR_Default,
-        TDR_WithGlow,
+    enum AudioMode : uint8_t {
+        Aud_SFX = 0x00,
+        Aud_Music = 0x01,
+        Aud_Ambient = 0x02,
+
+        Aud_COUNT,
+        Aud_IsStereo = 0x80,
     };
 
+
+    enum UIFlags : uint8_t {
+        UI_None = 0x00,
+        UI_Duplicate = 0x01,
+        UI_Remove = 0x02,
+
+        UI_DisableDuplicate = 0x20,
+        UI_DisableRemove = 0x40,
+        UI_IsElement = 0x80,
+    };
+
+    enum PType : uint8_t {
+        PTY_Projection = 0x00,
+        PTY_Material = 0x01,
+        PTY_Bundle = 0x02,
+
+
+        PTY_Count,
+    };
+
+    enum RecipeType :uint8_t {
+        RECIPE_NONE = 0x00,
+        RECIPE_VANILLA,
+        RECIPE_MODDED,
+        RECIPE_PROJECTION,
+        RECIPE_PROJECTION_MAT,
+        RECIPE_PROJECTION_BUN,
+        __RECIPE_TYPE_COUNT,
+    };
+
+    template<size_t maxSize = 256>
     static inline void writeShortString(const std::string& str, const Stream& stream) {
-        uint8_t len = uint8_t(str.length() > 255 ? 255 : str.length());
+        uint8_t len = uint8_t(str.length() > maxSize ? maxSize : str.length());
         stream.writeValue(len);
         stream.write(str.c_str(), len, false);
     }
-
-    enum GenFlags : uint8_t {
-        PROJ_FLG_NO_SIMD = 0x1,
-        PROJ_FLG_PREMULTIPLY_TILES = 0x2,
-        PROJ_FLG_PREMULTIPLY_ICONS = 0x4,
-        PROJ_DX9_ATLASES = 0x8,
-
-        PROJ_FLG_PREMULTIPLY = PROJ_FLG_PREMULTIPLY_TILES | PROJ_FLG_PREMULTIPLY_ICONS,
-    };
 
     enum VariationApplyMode : uint8_t {
         VAR_APPLY_None = 0x00,
@@ -1030,702 +1075,885 @@ namespace Projections {
         VAR_APPLY_LoopStart = 0x08,
     };
 
-#pragma pack(push, 1)
-
-    struct TraderInfo {
-        bool canBeTraded{};
-        WorldConditions worldConditions{};
-        BiomeFlags biomeFlags{};
-        float weight{};
-
-        void reset() {
-            weight = 5.0f;
-            worldConditions = WCF_None;
-            biomeFlags = BIOME_None;
-            canBeTraded = false;
+    inline uint32_t calculateNameHash(std::string_view name) {
+        if (name.length() < 1) {
+            return 0;
         }
 
-        void write(json& jsonF) const {
-            jsonF["canBeTraded"] = canBeTraded;
-            jsonF["worldConditions"] = uint64_t(worldConditions);
-            jsonF["biomeFlags"] = uint64_t(biomeFlags);
-            jsonF["weight"] = weight;
+        uint32_t hash = JCore::Data::calcuateCRC(name);
+        return hash != 0 ? hash : 1;
+    }
+
+    struct alignas(16) Palette {
+        static constexpr int32_t SIZE = UINT16_MAX + 1;
+        static constexpr int32_t HISTORY_SIZE = 16;
+        static constexpr int32_t HISTORY_SIZE_BIG = 128;
+
+        JCore::Color32 colors[SIZE]{};
+        int32_t count{};
+
+        int32_t histSize;
+        uint32_t historyC{ 0 };
+        int32_t history[HISTORY_SIZE_BIG]{};
+
+        void clear() {
+            count = 0;
+            historyC = 0;
+            histSize = HISTORY_SIZE - 1;
+            memset(colors, 0, sizeof(colors));
+            memset(&history, 0xFF, sizeof(history));
         }
 
-        void write(const Stream& stream) const {
-            stream.writeValue(canBeTraded);
-            stream.writeValue(worldConditions);
-            stream.writeValue(biomeFlags);
-            stream.writeValue(weight);
+        template<typename T>
+        static __forceinline void swap(T& lhs, T& rhs) {
+            T tmp = rhs;
+            rhs = lhs;
+            lhs = rhs;
         }
 
-        void read(json& jsonF) {
-            reset();
-            if (jsonF.is_object()) {
-                canBeTraded = jsonF.value("canBeTraded", false);
-                worldConditions = WorldConditions(jsonF.value("worldConditions", 0ULL));
-                biomeFlags = BiomeFlags(jsonF.value("biomeFlags", 0ULL));
-                weight = jsonF.value("weight", 25.0f);
+        int32_t indexOf(JCore::Color32 color) const {
+            if (count > (SIZE >> 2)) {
+                static constexpr int32_t OFFFSET_LUT[64]{
+                    0 , 0 , 0 , 0 ,
+                    1 , 1 , 1 , 1 ,
+                    2 , 2 , 2 , 2 ,
+                    3 , 3 , 3 , 3 ,
+                    4 , 4 , 4 , 4 ,
+                    5 , 5 , 5 , 5 ,
+                    6 , 6 , 6 , 6 ,
+                    7 , 7 , 7 , 7 ,
+                    8 , 8 , 8 , 8 ,
+                    9 , 9 , 9 , 9 ,
+                    10, 10, 10, 10,
+                    11, 11, 11, 11,
+                    12, 12, 12, 12,
+                    13, 13, 13, 13,
+                    14, 14, 14, 14,
+                    15, 15, 15, 15,
+                };
+
+                __m128i key = _mm_set1_epi32(reinterpret_cast<int32_t&>(color));
+                const __m128i* simdPtr = reinterpret_cast<const __m128i*>(colors);
+
+                int32_t sCount = count >> 5;
+                uint64_t mask = 0;
+                for (int32_t i = 0, j = 0; i < sCount; i++, j += 32) {
+                    mask  = uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key)));
+                    mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 16;
+                    mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 32;
+                    mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 48;
+
+                    if (mask != 0) {
+                        return i + OFFFSET_LUT[Math::findFirstLSB(mask)];
+                    }
+
+                    mask = uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key)));
+                    mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 16;
+                    mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 32;
+                    mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 48;
+
+                    if (mask != 0) {
+                        return (i + 16) + OFFFSET_LUT[Math::findFirstLSB(mask)];
+                    }
+                }
+
+                sCount <<= 4;
+                for (int32_t i = sCount; i < count; i++) {
+                    if (colors[i] == color) {
+                        return i;
+                    }
+                }
+                return -1;
+            }
+
+            for (int32_t i = 0; i < count; i++) {
+                if (colors[i] == color) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        int32_t add(JCore::Color32 color) {
+            using namespace JCore;
+            int32_t index;
+            for (int32_t i = 0; i <= histSize; i++) {
+                if (colors[history[i]] == color) {
+                    index = history[i];
+                    if (i) {
+                        swap(history[i], history[i - 1]);
+                    }
+                    return index;
+                }
+            }
+ 
+            index = indexOf(color);
+            if (index < 0 && count < SIZE) {
+                index = count++;
+                colors[index] = color;
+                histSize = (count > 1024 ? HISTORY_SIZE_BIG - 1 : HISTORY_SIZE - 1);
+            }
+
+            if (index > -1) {
+                history[historyC++ & histSize] = index;
+            }
+            return index;
+        }
+    };
+
+    struct PBuffers {
+        JCore::ImageData readBuffer{};
+        JCore::ImageData frameBuffer{};
+        JCore::AudioData audioBuffer{};
+
+        uint8_t* idxUI8{};
+        uint16_t* idxUI16{};
+
+        bool noPalette{ false };
+        Palette palettePrev{};
+        Palette palette{};
+
+        void init(int32_t maxResolution, int32_t baseSamples) {
+            using namespace JCore;
+            readBuffer.doAllocate(maxResolution, maxResolution, TextureFormat::RGBA32);
+            frameBuffer.doAllocate(maxResolution, maxResolution, TextureFormat::RGBA32);
+            audioBuffer.doAllocate(AudioFormat::PCM, AudioSampleType::Signed, 16, 2, baseSamples);
+
+            if (idxUI8 != nullptr) { free(idxUI8); }
+            idxUI8 = reinterpret_cast<uint8_t*>(malloc(size_t(maxResolution) * maxResolution * 3));
+            idxUI16 = reinterpret_cast<uint16_t*>(idxUI8 + maxResolution * maxResolution);
+            palettePrev.clear();
+            palette.clear();
+            noPalette = false;
+        }
+
+        void clear() {
+            using namespace JCore;
+            char temp[256]{ 0 };
+            palettePrev.clear();
+            palette.clear();
+
+            Utils::formatDataSize(temp, readBuffer.getBufferSize());
+            JCORE_INFO("Freeing Read  Buffer %s", temp);
+            readBuffer.clear(true);
+
+            Utils::formatDataSize(temp, frameBuffer.getBufferSize());
+            JCORE_INFO("Freeing Frame Buffer %s", temp);
+            frameBuffer.clear(true);
+
+            Utils::formatDataSize(temp, audioBuffer.getBufferSize());
+            JCORE_INFO("Freeing Audio Buffer %s", temp);
+            audioBuffer.clear(true);
+
+            noPalette = false;
+            if (idxUI8) {
+                free(idxUI8);
+                idxUI8 = nullptr;
+                idxUI16 = nullptr;
             }
         }
     };
 
-    struct DropInfo {
-        enum DropFlags : uint8_t {
-            DROP_None,
-            DROP_Modded = 0x1,
-            DROP_NetID = 0x2,
-        };
+    struct ProjectionIndex {
+        uint32_t lo{ 0 }, hi{ 0 };
 
-        uint8_t flags{};
-        std::string modSource{};
-        NPCID sourceEntity{};
-        WorldConditions worldConditions{};
-        BiomeFlags biomeFlags{};
-        float chance{ 0.15f };
-        float weight{ 25.0f };
+        ProjectionIndex() noexcept = default;
+        ProjectionIndex(std::string_view view) : ProjectionIndex() {
+            size_t ind = view.find(':', 0);
+            if (ind != std::string_view::npos) {
+                lo = calculateNameHash(view.substr(0, ind));
+                hi = calculateNameHash(view.substr(ind + 1));
+            }
+        }
 
-        bool isModded() const { return bool(flags & DROP_Modded); }
-        bool isNetID() const { return bool(flags & DROP_NetID); }
+        constexpr bool isValid() const {
+            return (lo & hi) != 0x00;
+        }
+    };
 
-        void setIsModded(bool value) { flags = (flags & ~DROP_Modded) | (value ? DROP_Modded : DROP_None); }
-        void setIsNetID(bool value) { flags = (flags & ~DROP_NetID) | (value ? DROP_NetID : DROP_None); }
+    struct CoinData {
+        static constexpr int32_t COPPER_SIZE = 100;
+        static constexpr int32_t SILVER_SIZE = COPPER_SIZE * 100;
+        static constexpr int32_t GOLD_SIZE = SILVER_SIZE * 100;
 
+        int32_t total{};
 
-        void reset() {
-            flags = 0;
-            chance = 0.15f;
-            weight = 25.0f;
-            modSource = "";
-            sourceEntity = NPC_Any;
-            worldConditions = WCF_None;
-            biomeFlags = BIOME_None;
+        constexpr CoinData() : total(0) {}
+        constexpr CoinData(int32_t total) : total(total) {}
+        constexpr CoinData(int32_t copper, int32_t silver, int32_t gold, int32_t platinum) : total(0) {
+            merge(copper, silver, gold, platinum);
+        }
+
+        constexpr void extract(int32_t& copper, int32_t& silver, int32_t& gold, int32_t& platinum) const {
+            copper = (total % COPPER_SIZE);
+            silver = (total % SILVER_SIZE) / COPPER_SIZE;
+            gold = ((total % GOLD_SIZE) / SILVER_SIZE);
+            platinum = total / GOLD_SIZE;
+        }
+
+        constexpr void merge(int32_t copper, int32_t silver, int32_t gold, int32_t platinum) {
+            total = copper + silver * COPPER_SIZE + gold * SILVER_SIZE + platinum * GOLD_SIZE;
+        }
+
+        void write(const Stream& stream) const {
+            stream.writeValue(total, 1, false);
         }
 
         void write(json& jsonF) const {
-            if (flags & DROP_Modded) {
-                jsonF["sourceEntity"] = modSource;
+            int32_t c{ 0 }, s{ 0 }, g{ 0 }, p{ 0 };
+            extract(c, s, g, p);
+            jsonF["copper"] = c;
+            jsonF["silver"] = s;
+            jsonF["gold"] = g;
+            jsonF["platinum"] = p;
+        }
+
+        void read(const json& jsonF) {
+            int32_t c{ 0 }, s{ 0 }, g{ 0 }, p{ 0 };
+            if (jsonF.is_object()) {
+                c = jsonF.value("copper", 0);
+                s = jsonF.value("silver", 0);
+                g = jsonF.value("gold", 0);
+                p = jsonF.value("platinum", 0);
             }
-            else {
-                jsonF["isNetID"] = bool(flags & DROP_NetID);
-                jsonF["sourceEntity"] = int32_t(sourceEntity);
+            merge(c, s, g, p);
+        }
+    };
+
+    struct PathNum {
+        size_t loIndex{ 0 };
+        size_t hiIndex{ 0 };
+
+        size_t getCount() const { return hiIndex - loIndex; }
+    };
+
+    struct RecipeIngredient {
+        uint8_t uiFlags{};
+
+        RecipeType type{};
+        std::string itemName{};
+        int32_t itemID{ 0 };
+        int32_t count{ 1 };
+
+        RecipeIngredient() noexcept = default;
+
+        void reset() {
+            type = RECIPE_NONE;
+            itemID = 0;
+            itemName = "";
+            count = 1;
+        }
+
+        void read(const json& jsonF) {
+            using namespace JCore;
+            reset();
+            if (jsonF.is_object()) {
+                type = jsonF.value("type", RECIPE_NONE);
+                count = Math::max(jsonF.value("count", 1), 1);
+                switch (type)
+                {
+                case Projections::RECIPE_VANILLA:
+                    itemID = jsonF.value("value", 0);
+                    break;
+                case Projections::RECIPE_PROJECTION:
+                case Projections::RECIPE_PROJECTION_MAT:
+                case Projections::RECIPE_PROJECTION_BUN:
+                case Projections::RECIPE_MODDED:
+                    itemName = IO::readString(jsonF, "value", "");
+                    break;
+                }
             }
-            jsonF["worldConditions"] = uint64_t(worldConditions);
-            jsonF["biomeFlags"] = uint64_t(biomeFlags);
+        }
+
+        void write(json& jsonF) const {
+            jsonF["type"] = type;
+            jsonF["count"] = count;
+            switch (type) {
+            case Projections::RECIPE_VANILLA:
+                jsonF["value"] = itemID;
+                break;
+            case Projections::RECIPE_PROJECTION:
+            case Projections::RECIPE_PROJECTION_MAT:
+            case Projections::RECIPE_PROJECTION_BUN:
+            case Projections::RECIPE_MODDED:
+                jsonF["value"] = itemName;
+                break;
+            }
+        }
+
+        void write(const Stream& stream) const {
+            stream.writeValue(type, 1, false);
+            stream.writeValue(Math::max(count, 1), 1, false);
+            switch (type)
+            {
+            default:
+                return;
+            case RECIPE_VANILLA:
+                stream.writeValue(itemID);
+                break;
+            case RECIPE_MODDED:
+            case RECIPE_PROJECTION:
+            case RECIPE_PROJECTION_MAT:
+            case RECIPE_PROJECTION_BUN:
+                writeShortString(itemName, stream);
+                break;
+            }
+        }
+    };
+
+    struct RecipeItem {
+        uint8_t uiFlags{};
+        std::vector<RecipeIngredient> ingredients{};
+
+        void reset() {
+            ingredients.resize(1);
+            ingredients[0].reset();
+        }
+
+        void write(const Stream& stream, uint32_t count) const {
+            RecipeIngredient defV{};
+            for (size_t i = 0; i <= count; i++) {
+                if (i >= ingredients.size()) {
+                    defV.write(stream);
+                    continue;
+                }
+                ingredients[i].write(stream);
+            }
+        }
+        void write(json& jsonF) const {
+            json::array_t arr{};
+            for (size_t i = 0; i < ingredients.size(); i++) {
+                ingredients[i].write(arr.emplace_back(json{}));
+            }
+            jsonF = arr;
+        }
+        void read(const json& jsonF) {
+            reset();
+            const json* arr = nullptr;
+            if (jsonF.is_array()) {
+                arr = &jsonF;
+            }
+            else if (jsonF.is_object()) {
+                arr = &JCore::IO::getObject(jsonF, "ingredients");
+            }
+
+            if (arr != nullptr) {
+
+                size_t count = Math::min<size_t>(1, arr->size());
+                ingredients.resize(count);
+
+                for (size_t i = 0; i < count; i++)
+                {
+                    ingredients[i].reset();
+                }
+
+                for (size_t i = 0; i < arr->size(); i++) {
+                    ingredients[i].read((*arr)[i]);
+                }
+            }
+        }
+
+        void duplicate(size_t index) {
+            if (index >= ingredients.size()) { return; }
+            RecipeIngredient copy = ingredients[index];
+            ingredients.insert(ingredients.begin() + index, copy);
+        }
+
+        void removeAt(size_t index) {
+            if (index >= ingredients.size()) { return; }
+            ingredients.erase(ingredients.begin() + index);
+        }
+    };
+
+    struct Recipe {
+        uint8_t uiFlags{};
+        std::vector<RecipeItem> items{};
+
+        void reset() {
+            items.resize(1);
+            items[0].reset();
+        }
+
+        void read(const json& jsonF) {
+            reset();
+
+            if (!jsonF.is_object()) {
+                return;
+            }
+
+            auto& arr = JCore::IO::getObject(jsonF, "recipe");
+            for (size_t i = 0; i < arr.size(); i++) {
+                this->items.emplace_back().read(arr[i]);
+            }
+        }
+
+        void write(json& jsonF) const {
+            json::array_t arr{};
+            for (size_t i = 0; i < items.size(); i++) {
+                items[i].write(arr.emplace_back());
+            }
+            jsonF["recipe"] = arr;
+        }
+
+        void write(const Stream& stream) const {
+            int32_t maxAlts = 0;
+            for (size_t i = 0; i < items.size(); i++) {
+                maxAlts = Math::max(int32_t(items[i].ingredients.size()) - 1, maxAlts);
+            }
+            maxAlts = Math::min(maxAlts, 255);
+
+            uint8_t altCount = uint8_t(maxAlts);
+            stream.writeValue<uint8_t>(altCount, 1, false);
+            stream.writeValue<int32_t>(int32_t(items.size()), 1, false);
+            for (size_t i = 0; i < items.size(); i++) {
+                items[i].write(stream, altCount);
+            }
+        }
+
+        void duplicate(size_t index) {
+            if (index >= items.size()) { return; }
+            RecipeItem copy = items[index];
+            items.insert(items.begin() + index, copy);
+        }
+
+        void removeAt(size_t index) {
+            if (index >= items.size()) { return; }
+            items.erase(items.begin() + index);
+        }
+    };
+
+    enum DropFlags : uint8_t {
+        DROP_None,
+        DROP_Modded = 0x1,
+        DROP_NetID = 0x2,
+    };
+
+    struct PConditions {
+        WorldConditions worldConditions{};
+        BiomeFlags biomeConditions{};
+
+        void reset() {
+            worldConditions = WorldConditions::WCF_None;
+            biomeConditions = BiomeFlags::BIOME_None;
+        }
+
+        void read(const json& jsonF) {
+            reset();
+
+            if (jsonF.is_object()) {
+                worldConditions = jsonF.value("worldConditions", WorldConditions::WCF_None);
+                biomeConditions = jsonF.value("biomeConditions", BiomeFlags::BIOME_None);
+            }
+        }
+
+        void write(json& jsonF) const {
+            jsonF["worldConditions"] = worldConditions;
+            jsonF["biomeConditions"] = biomeConditions;
+        }
+
+        void write(const Stream& stream) const {
+            stream.writeValue(worldConditions);
+            stream.writeValue(biomeConditions);
+        }
+    };
+
+    struct ItemConditions {
+        PConditions conditions{};
+        float chance{ 1.0f };
+        float weight{ 1.0f };
+
+        void reset() {
+            conditions.reset();
+            chance = 1.0f;
+            weight = 1.0f;
+        }
+
+        void read(const json& jsonF) {
+            reset();
+
+            if (jsonF.is_object()) {
+                conditions.read(JCore::IO::getObject(jsonF, "conditions"));
+                chance = jsonF.value("chance", 1.0f);
+                weight = jsonF.value("weight", 1.0f);
+            }
+        }
+
+        void write(json& jsonF) const {
+            conditions.write(jsonF["conditions"]);
             jsonF["chance"] = chance;
             jsonF["weight"] = weight;
         }
 
         void write(const Stream& stream) const {
-            stream.writeValue(flags, 1, false);
-
-            if (flags & DROP_Modded) {
-                writeShortString(modSource, stream);
-            }
-            else {
-                stream.writeValue(sourceEntity);
-            }
-
-            stream.writeValue(worldConditions);
-            stream.writeValue(biomeFlags);
+            conditions.write(stream);
             stream.writeValue(chance);
             stream.writeValue(weight);
         }
-
-        void read(json& jsonF) {
-            reset();
-            if (jsonF.is_object()) {
-                flags = DROP_None;
-                auto& srcE = jsonF["sourceEntity"];
-                if (srcE.is_string()) {
-                    modSource = srcE.get<std::string>();
-                    flags |= DROP_Modded;
-                }
-                else if (srcE.is_number_integer()) {
-                    sourceEntity = NPCID(srcE.get<int32_t>());
-                    flags |= jsonF.value("isNetID", false) ? DROP_NetID : DROP_None;
-                }
-                worldConditions = WorldConditions(jsonF.value("worldConditions", 0ULL));
-                biomeFlags = BiomeFlags(jsonF.value("biomeFlags", 0ULL));
-                chance = jsonF.value("chance", 0.15f);
-                weight = jsonF.value("weight", 25.0f);
-            }
-        }
     };
 
-    struct GenerationSettings {
-        GenFlags flags{ PROJ_FLG_PREMULTIPLY };
-        int32_t alphaClip{ 4 };
-        OutputFormat atlasFormat{};
-
-        constexpr GenerationSettings() : flags{ PROJ_FLG_PREMULTIPLY }, alphaClip(4) {}
-        constexpr GenerationSettings(GenFlags flags, int32_t alphaClip) : flags(flags), alphaClip(alphaClip < 0 ? 0 : alphaClip > 255 ? 255 : alphaClip) {}
+    struct SourceID {
+        int32_t id;
+        std::string strId;
 
         void reset() {
-            flags = PROJ_FLG_PREMULTIPLY;
-            alphaClip = 4;
+
+        }
+    };
+
+    struct DropSource {
+        uint8_t uiFlags{};
+
+        PoolType pool;
+        ItemConditions conditions;
+        DropFlags flags;
+        int32_t stack;
+        int32_t id;
+        std::string strId;
+
+        void reset() {
+            pool = PoolType::Pool_None;
+            conditions.reset();
+            flags = DropFlags::DROP_None;
+            stack = 1;
+            id = 0;
+            strId = "";
+        }
+
+        bool isModded() const {
+            return (flags & DropFlags::DROP_Modded) != 0;
+        }
+
+        bool isNetID() const {
+            return (flags & DropFlags::DROP_NetID) != 0;
+        }
+
+        void setIsModded(bool value) {
+            flags = DropFlags(value ? flags | DROP_Modded : flags & ~DROP_Modded);
+        }
+
+        void setIsNetID(bool value) {
+            flags = DropFlags(value ? flags | DROP_NetID : flags & ~DROP_NetID);
+        }
+
+        void read(const json& jsonF) {
+            reset();
+            if (jsonF.is_object()) {
+                pool = jsonF.value("pool", PoolType::Pool_None);
+                stack = Math::max(jsonF.value("stack", 1), 1);
+                flags = jsonF.value("flags", DROP_None);
+                conditions.read(JCore::IO::getObject(jsonF, "conditions"));
+
+                if (flags & DROP_Modded) {
+                    strId = JCore::IO::readString(jsonF, "source", "");
+                }
+                else {
+                    id = jsonF.value("source", 0);
+                }
+            }
         }
 
         void write(json& jsonF) const {
-            jsonF["flags"] = uint32_t(flags);
-            jsonF["alphaClip"] = alphaClip;
-            atlasFormat.write(jsonF["atlasFormat"]);
-        }
+            jsonF["pool"] = pool;
+            conditions.write(jsonF["conditions"]);
+            jsonF["stack"] = stack;
+            jsonF["flags"] = flags;
 
-        void read(json& jsonF) {
-            flags = GenFlags(jsonF.value<uint32_t>("flags", PROJ_FLG_PREMULTIPLY));
-            alphaClip = jsonF.value("alphaClip", 4);
-            atlasFormat.read(jsonF["atlasFormat"]);
-        }
-
-        constexpr bool useSIMD() const { return (flags & PROJ_FLG_NO_SIMD) == 0; }
-        constexpr bool doPremult() const { return bool(flags & PROJ_FLG_PREMULTIPLY); }
-        constexpr bool doPremultTiles() const { return bool(flags & PROJ_FLG_PREMULTIPLY_TILES); }
-        constexpr bool doPremultIcons() const { return bool(flags & PROJ_FLG_PREMULTIPLY_ICONS); }
-        constexpr bool isDX9() const { return bool(flags & PROJ_DX9_ATLASES); }
-    };
-
-    struct PixelTileIndex {
-    public:
-        static constexpr uint32_t INDEX_MASK = 0x3FFFFFFFU;
-
-        constexpr PixelTileIndex() : _data(0) {}
-        constexpr PixelTileIndex(uint32_t index, uint32_t rotation) : _data((index& INDEX_MASK) | ((rotation & 0x3) << 30)) {}
-        constexpr PixelTileIndex(uint32_t data) : _data(data) {}
-
-        constexpr bool operator==(uint32_t value) const { return (_data & INDEX_MASK) == value; }
-        constexpr bool operator!=(uint32_t value) const { return (_data & INDEX_MASK) != value; }
-
-        void setIndex(uint32_t index) { _data = (_data & ~INDEX_MASK) | (index & INDEX_MASK); }
-        uint32_t getIndex() const { return _data & INDEX_MASK; }
-
-        void setRotation(uint32_t rot) {
-            _data = (_data & INDEX_MASK) | ((rot & 0x3) << 30);
-        }
-        uint32_t getRotation() const { return (_data >> 30) & 0x3; }
-
-        void set(uint32_t index, uint32_t rot) {
-            _data = (index & INDEX_MASK) | ((rot & 0x3) << 30);
-        }
-        constexpr uint32_t getData() const { return _data; }
-
-    private:
-        uint32_t _data;
-    };
-    struct PixelBlock {
-        JCore::Color32 colors[16 * 16]{};
-
-        constexpr PixelBlock() : colors{} {}
-        PixelBlock(JCore::Color32 color) : PixelBlock() {
-            for (size_t i = 0; i < 256; i++) {
-                colors[i] = color;
-            }
-        }
-
-        bool operator==(const PixelBlock& other) const {
-            return memcmp(colors, other.colors, sizeof(colors)) == 0;
-        }
-
-        bool operator!=(const PixelBlock& other) const {
-            return memcmp(colors, other.colors, sizeof(colors)) != 0;
-        }
-    };
-
-    struct PixelBlockCH {
-        PixelBlock blocks[4]{};
-
-        PixelBlockCH() : blocks{} {}
-        PixelBlockCH(const PixelBlock buffer[4]) : blocks{} { memcpy(blocks, buffer, sizeof(blocks)); }
-        PixelBlockCH(JCore::Color32 color) : blocks{} {
-            JCore::Color32* ptr = reinterpret_cast<JCore::Color32*>(blocks);
-            for (size_t i = 0; i < sizeof(blocks) / sizeof(JCore::Color32); i++) {
-                ptr[i] = color;
-            }
-        }
-
-        PixelBlock& operator[](size_t i) { return blocks[i]; }
-        const PixelBlock& operator[](size_t i) const { return blocks[i]; }
-    };
-
-    struct CRCBlock {
-        uint32_t crc[4]{};
-
-        constexpr CRCBlock() : crc{ 0 } {}
-
-        uint32_t& operator[](size_t i) { return crc[0]; }
-        constexpr uint32_t operator[](size_t i) const { return crc[0]; }
-
-        void updateCrc(const PixelBlockCH& ch) {
-            crc[0] = JCore::Data::updateCRC(0xFFFFFFFFU, ch[0].colors, 1024);
-            crc[1] = JCore::Data::updateCRC(0xFFFFFFFFU, ch[1].colors, 1024);
-            crc[2] = JCore::Data::updateCRC(0xFFFFFFFFU, ch[2].colors, 1024);
-            crc[3] = JCore::Data::updateCRC(0xFFFFFFFFU, ch[3].colors, 1024);
-        }
-
-        void updateCrc(const PixelBlockCH& pix, int32_t ind) {
-            crc[ind] = JCore::Data::updateCRC(0xFFFFFFFFU, pix[ind].colors, 1024);
-        }
-
-        void updateCrc(const PixelBlock& pix, int32_t ind) {
-            crc[ind] = JCore::Data::updateCRC(0xFFFFFFFFU, pix.colors, 1024);
-        }
-    };
-
-    struct PixelTile {
-        uint8_t data{};
-        uint16_t x{ 0 }, y{ 0 };
-
-        constexpr PixelTile() : data(0x80) {}
-
-        JCore::Color32 getColor(const PixelBlock& block) const {
-            int32_t r = 0x00, g = 0x00, b = 0x00, a = 0x00;
-
-            const uint8_t* data = reinterpret_cast<const uint8_t*>(block.colors);
-            for (size_t i = 0; i < 256; i++) {
-                r += *data++;
-                g += *data++;
-                b += *data++;
-                a += *data++;
-            }
-
-            r >>= 8;
-            g >>= 8;
-            b >>= 8;
-            a >>= 8;
-            return JCore::Color32(uint8_t(r), uint8_t(g), uint8_t(b), uint8_t(a));
-        }
-
-        static JCore::PoolAllocator<PixelTile>& getAllocator() {
-            static JCore::PoolAllocator<PixelTile> allocator{};
-            return allocator;
-        }
-
-        constexpr uint8_t getAtlas() const {
-            return data & 0x1F;
-        }
-
-        constexpr uint16_t getWidth() const { return 16; }
-        constexpr uint16_t getHeight() const { return 16; }
-
-        void setEmpty(bool val) {
-            data = val ? (data | 0x80) : (data & 0x7F);
-        }
-
-        void setAtlas(uint8_t val) {
-            data = (data & 0x80) | (val & 0x1F);
-        }
-
-        void setRotation(uint8_t rot) {
-            data = (data & ~0x60) | ((rot & 0x3) << 5);
-        }
-
-        constexpr uint8_t getRotation() const {
-            return (data >> 5) & 0x3;
-        }
-
-        constexpr bool isEmpty() const {
-            return bool(data & 0x80);
-        }
-
-        void doPremultiply(PixelBlockCH& blockCh, CRCBlock& crc) {
-            PixelBlock& block = blockCh[getRotation()];
-            for (size_t i = 0; i < 256; i++) {
-                premultiplyC32(block.colors[i]);
-            }
-            crc.updateCrc(blockCh, getRotation());
-        }
-
-        void setFull(PixelBlockCH& blockCh, JCore::Color32 color, CRCBlock& crc) {
-            PixelBlock& block = blockCh[getRotation()];
-            for (size_t i = 0; i < 256; i++) {
-                block.colors[i] = color;
-            }
-            crc.updateCrc(blockCh, getRotation());
-        }
-
-        void copyFlipped(PixelBlockCH& blockMain, const PixelBlockCH& blockOther, const PixelTile& other, uint32_t rotation, CRCBlock& crc) {
-            using namespace JCore;
-            setRotation(uint8_t(rotation));
-            PixelBlock& blockA = blockMain[rotation];
-            const PixelBlock& blockB = blockOther[other.getRotation()];
-            switch (rotation & 0x3) {
-                case 0:
-                    memcpy(this, &other, sizeof(PixelTile));
-                    return;
-                case 1: //X Flip
-                    for (size_t y = 0, yP = 0; y < 16; y++, yP += 16) {
-                        Data::reverseCopy(blockA.colors + yP, blockB.colors + yP, sizeof(Color32), 16);
-                    }
-                    break;
-                case 2: //Y Flip
-                    for (size_t y = 0, yP = 0, yPP = (16 * 16) - 16; y < 16; y++, yP += 16, yPP -= 16) {
-                        memcpy(blockA.colors + yPP, blockB.colors + yP, 16 * sizeof(Color32));
-                    }
-                    break;
-                case 3: //XY Flip
-                    Data::reverseCopy(blockA.colors, blockB.colors, sizeof(Color32), 256);
-                    break;
-            }
-            crc.updateCrc(blockMain, rotation);
-        }
-
-        void readFrom(PixelBlockCH& blockMain, const JCore::ImageData& img, int32_t index, uint8_t alphaClip, CRCBlock& crc) {
-            using namespace JCore;
-            PixelBlock& block = blockMain[getRotation()];
-            if (img.format == TextureFormat::RGBA32) {
-                const Color32* src = reinterpret_cast<const Color32*>(img.data);
-                for (size_t y = 0, yX = 0; y < 16; y++, yX += 16)
-                {
-                    memcpy(block.colors + yX, src + index, 16 * sizeof(Color32));
-                    index += img.width;
-                }
+            if (flags & DROP_Modded) {
+                jsonF["source"] = strId;
             }
             else {
-                const uint8_t* pixData = img.data + (img.isIndexed() ? img.paletteSize * sizeof(Color32) : 0);
-                const int32_t bpp(getBitsPerPixel(img.format) >> 3);
-                index *= bpp;
-                const int32_t scan = img.width * bpp;
-                for (int32_t y = 0, yP = 0; y < 16; y++, yP += 16) {
-                    for (int32_t x = 0, xP = index; x < 16; x++, xP += bpp) {
-                        convertPixel<Color32>(img.format, img.data, pixData + xP, block.colors[yP + x]);
-                    }
-                    index += scan;
-                }
-            }
-
-            setEmpty(true);
-            for (size_t i = 0; i < 256; i++) {
-                auto& color = block.colors[i];
-                if (color.a <= alphaClip)
-                {
-                    color.r = color.g = color.b = 0;
-                }
-                else { setEmpty(false); }
-            }
-            crc.updateCrc(blockMain, getRotation());
-        }
-
-        void maskWith(PixelBlock& block, const PixelBlock& blockOther, uint8_t alphaClip, CRCBlock& crc) {
-            using namespace JCore;
-            setEmpty(true);
-            for (size_t i = 0; i < 256; i++) {
-                Color32& self = block.colors[i];
-                const Color32* otherC = blockOther.colors + i;
-                self.a = multUI8(self.r, otherC->a);
-
-                if (self.a <= alphaClip) { memset(&self, 0, 4); continue; }
-                memcpy(&self, otherC, 3);
-                setEmpty(false);
-            }
-            crc.updateCrc(block, getRotation());
-        }
-
-        void blitTo(const PixelBlockCH& blockCh, JCore::Color32* data, int32_t width) const {
-            using namespace JCore;
-            const PixelBlock& block = blockCh[getRotation()];
-            for (size_t y = 0, yX = 0; y < 16; y++, yX += 16) {
-                memcpy(data, block.colors + yX, 16 * sizeof(Color32));
-                data += width;
-            }
-        }
-
-        void writeTo(const PixelBlockCH& blockCh, JCore::Color32* data, int32_t width) const {
-            blitTo(blockCh, data + (int32_t(y) * width + x), width);
-        }
-
-        void blitTo(const PixelBlockCH& blockCh, JCore::Color4444* data, int32_t width) const {
-            using namespace JCore;
-            const PixelBlock& block = blockCh[getRotation()];
-            for (size_t y = 0, yX = 0; y < 16; y++, yX += 16) {
-                auto pix = block.colors + yX;
-                for (size_t x = 0; x < 16; x++) {
-                    auto& p32 = pix[x];
-                    data[x] = Color4444(p32.r >> 4, p32.g >> 4, p32.b >> 4, p32.a >> 4);
-                }
-                data += width;
-            }
-        }
-
-        void writeTo(const PixelBlockCH& blockCh, JCore::Color4444* data, int32_t width) const {
-            blitTo(blockCh, data + (int32_t(y) * width + x), width);
-        }
-
-        void blendTo(const PixelBlockCH& blockCh, JCore::Color32* data, int32_t width) const {
-            using namespace JCore;
-            const PixelBlock& block = blockCh[getRotation()];
-            for (size_t y = 0, yX = 0; y < 16; y++, yX += 16) {
-                auto ptrC = block.colors + yX;
-                for (size_t i = 0; i < 16; i++) {
-                    blendUI8(data[i], ptrC[i]);
-                }
-                data += width;
-            }
-        }
-    };
-
-    struct PixelTileCH {
-        PixelTile tiles[4]{};
-        PixelTileCH() : tiles{} {}
-        PixelTileCH(const PixelTile buffer[4]) : tiles{} { memcpy(tiles, buffer, sizeof(tiles)); }
-
-        PixelTile& operator[](size_t i) { return tiles[i]; }
-        const PixelTile& operator[](size_t i) const { return tiles[i]; }
-    };
-
-    typedef std::vector<PixelBlockCH, JCore::AlignmentAllocator<PixelBlockCH, 16>> PixelBlockVector;
-    typedef std::vector<CRCBlock, JCore::AlignmentAllocator<CRCBlock, 16>> CRCBlockVector;
-
-    static constexpr PixelTile NullPixelTile{};
-
-    struct ProjectionMaterial {
-        static constexpr size_t MAX_DROPS = 48;
-
-        std::string name{};
-        std::string description{};
-
-        RarityType rarity{};
-
-        TraderInfo traderInfo{};
-        uint8_t drops{ 0 };
-        DropInfo dropInfo[MAX_DROPS]{};
-
-        int16_t icon{ -1 };
-
-        void removeDrop(int32_t index) {
-            if (index < 0 || index >= drops) { return; }
-
-            if (index != drops - 1) {
-                memcpy(dropInfo + index, dropInfo + index + 1, size_t(drops) - index - 1);
-            }
-            drops--;
-        }
-
-        void read(json& jsonF) {
-            using namespace JCore;
-            name = IO::readString(jsonF["name"], "");
-            description = IO::readString(jsonF["description"], "");
-            rarity = RarityType(jsonF.value<int32_t>("rarity", 0));
-
-            traderInfo.read(jsonF["traderInfo"]);
-
-            drops = 0;
-            auto& dropIs = jsonF["drops"];
-            if (dropIs.is_array()) {
-                drops = uint8_t(std::min(dropIs.size(), MAX_DROPS));
-                for (size_t i = 0; i < drops; i++) {
-                    dropInfo[i].read(dropIs[i]);
-                }
-            }
-            else {
-                dropIs = jsonF["drop"];
-                if (dropIs.is_object()) {
-                    drops = 1;
-                    dropInfo[0].read(dropIs);
-                }
-            }
-        }
-        void write(json& jsonF) const {
-            jsonF["name"] = name;
-            jsonF["description"] = description;
-            jsonF["rarity"] = int32_t(rarity);
-
-            traderInfo.write(jsonF["traderInfo"]);
-            if (drops > 1) {
-                json::array_t arr{};
-                for (size_t i = 0; i < drops; i++) {
-                    dropInfo[i].write(arr.emplace_back(json::object_t{}));
-                }
-                jsonF["drops"] = arr;
-            }
-            else if (drops == 1) {
-                dropInfo[0].write(jsonF["drop"]);
+                jsonF["source"] = id;
             }
         }
 
         void write(const Stream& stream) const {
-            writeShortString(name, stream);
-            writeShortString(description, stream);
-            stream.writeValue(rarity);
-            stream.writeValue(icon);
-            traderInfo.write(stream);
-            stream.writeValue(drops);
-            for (size_t i = 0; i < drops; i++) {
-                dropInfo[i].write(stream);
+            stream.writeValue(pool);
+            conditions.write(stream);
+            stream.writeValue(stack);
+            stream.writeValue(flags);
+
+            if (flags & DROP_Modded) {
+                writeShortString(strId, stream);
+            }
+            else {
+                stream.writeValue(stack);
             }
         }
     };
 
-    struct TileData {
-    public:
+    struct Tag {
+        std::string value{};
 
-        constexpr TileData() : _data(), _color() {}
-        constexpr TileData(uint32_t x, uint32_t y, uint32_t atlas) :
-            _data((x & 0xFFF) | ((y & 0xFFF) << 12) | ((atlas & 0xFF) << 24)), _color() {}
-
-        void setColor(JCore::Color32 val) {
-            _color = val;
+        void reset() {
+            value = std::string{};
         }
 
-        void setX(uint32_t val) {
-            _data = (_data & ~0xFFF) | (val & 0xFFF);
+        void write(json& jsonF) const {
+            jsonF = value;
         }
 
-        void setY(uint32_t val) {
-            _data = (_data & ~0xFFF000) | ((val & 0xFFF) << 12);
+        void read(const json& jsonF) {
+            reset();
+            value = JCore::IO::readString(jsonF, "");
         }
 
-        void setAtlas(uint32_t atlas) {
-            _data = (_data & ~0x1F000000) | ((atlas & 0x1F) << 24);
+        static void pushIfNotFound(std::string_view str, std::vector<std::string>& tags) {
+            if (JCore::Utils::isWhiteSpace(str)) { return; }
+            for (size_t i = 0; i < tags.size(); i++) {
+                if (JCore::Utils::strIEquals(str, tags[i])) {
+                    return;
+                }
+            }
+            auto& nTag = tags.emplace_back(str);
+            for (size_t i = 0; i < nTag.length(); i++) {
+                nTag[i] = char(tolower(nTag[i]));
+            }
         }
 
-        void setRotation(uint32_t rotation) {
-            _data = (_data & ~0x60000000) | ((rotation & 0x3) << 29);
-        }
+        void addTag(std::vector<std::string>& tags, std::string_view root) const {
+            using namespace JCore;
+            std::string_view view = value;
 
-        void setNull(bool value) {
-            _data = value ? (_data | 0x80000000) : (_data & ~0x80000000);
+            if (Utils::endsWith(view, ".tags", false)) {
+                FileStream fs(IO::combine(root, view), "rb");
+                std::string line{};
+                if (fs.isOpen()) {
+                    while (fs.readLine(line)) {
+                        std::string_view lineTrim = Utils::trim(line);
+                        if (Utils::isWhiteSpace(lineTrim)) {
+                            continue;
+                        }
+                        pushIfNotFound(lineTrim, tags);
+                    }
+                }
+                return;
+            }
+            view = Utils::trim(view);
+            if (!Utils::isWhiteSpace(view)) {
+                pushIfNotFound(Utils::trim(view), tags);
+            }
         }
-
-        constexpr JCore::Color32 getColor() const {
-            return _color;
-        }
-
-        constexpr uint16_t getX() const {
-            return uint32_t(_data & 0x0FFF);
-        }
-
-        constexpr uint16_t getY() const {
-            return uint32_t((_data >> 12) & 0x0FFF);
-        }
-
-        constexpr uint8_t getAtlas() const {
-            return uint8_t((_data >> 24) & 0x1F);
-        }
-
-        constexpr uint8_t getRotation() const {
-            return uint8_t((_data >> 29) & 0x3);
-        }
-
-        constexpr bool isNull() const {
-            return bool(_data & 0x80000000);
-        }
-
-    private:
-        uint32_t _data;
-        JCore::Color32 _color;
     };
-    static constexpr TileData NullTile(0U, 0U, 0x80U);
+
+    struct PMaterial {
+        bool noExport{};
+
+        std::string nameID{};
+        std::string name{};
+        std::string description{};
+
+        RarityType rarity{};
+        int32_t priority{ 0 };
+        PMaterialFlags flags{ PMaterialFlags::PMat_AllowShimmer };
+        CoinData coinValue{};
+
+        std::vector<DropSource> sources{};
+        std::vector<Recipe> recipes{};
+
+        TexMode iconMode{};
+        std::string icon{};
+        std::string_view root{};
+
+        void reset() {
+            nameID = "";
+            name = "";
+            description = "";
+            rarity = RARITY_Basic;
+            priority = 0;
+            flags = PMaterialFlags::PMat_AllowShimmer;
+            coinValue = CoinData(50, 1, 0, 0);
+
+            sources.clear();
+            recipes.clear();
+
+            noExport = false;
+            iconMode = TexMode::TEX_None;
+            icon = "";
+        }
+
+        void read(const json& jsonF, std::string_view root) {
+            using namespace JCore;
+            reset();
+            this->root = IO::getDirectory(root);
+            if (jsonF.is_object()) {
+                nameID = IO::readString(jsonF, "nameID", "");
+                name = IO::readString(jsonF, "name", "");
+                description = IO::readString(jsonF, "description", "");
+                rarity = jsonF.value("rarity", RARITY_Basic);
+                priority = jsonF.value("priority", 0);
+                flags = jsonF.value("flags", PMaterialFlags::PMat_AllowShimmer);
+                coinValue.read(JCore::IO::getObject(jsonF, "coinValue"));
+
+                auto& srcs = JCore::IO::getObject(jsonF, "sources");
+                size_t count = srcs.size();
+
+                sources.resize(count);
+                for (size_t i = 0; i < count; i++)
+                {
+                    sources[i].read(srcs[i]);
+                }
+                auto& rec = JCore::IO::getObject(jsonF, "recipes");
+                count = rec.size();
+
+                recipes.resize(count);
+                for (size_t i = 0; i < count; i++)
+                {
+                    recipes[i].read(rec[i]);
+                }
+
+                iconMode = jsonF.value("iconMode", TexMode::TEX_None);
+                icon = IO::readString(jsonF, "icon", "");
+                IO::eraseRoot(icon, root);
+            }
+        }
+
+        void write(json& jsonF) const {
+            jsonF["nameID"] = nameID;
+            jsonF["name"] = name;
+            jsonF["description"] = description;
+            jsonF["rarity"] = rarity;
+            jsonF["priority"] = priority;
+            jsonF["flags"] = flags;
+            coinValue.write(jsonF["coinValue"]);
+
+            json::array_t srcA{};
+            for (auto& src : sources)
+            {
+                src.write(srcA.emplace_back(json{}));
+            }
+            jsonF["sources"] = srcA;
+
+            json::array_t recA{};
+            for (auto& rec : recipes)
+            {
+                rec.write(recA.emplace_back(json{}));
+            }
+            jsonF["recipes"] = recA;
+
+            jsonF["iconMode"] = iconMode;
+            jsonF["icon"] = icon;
+        }
+
+        void write(const Stream& stream) const;
+
+        void duplicateRecipe(size_t index) {
+            if (index >= recipes.size()) { return; }
+            Recipe copy = recipes[index];
+            recipes.insert(recipes.begin() + index, copy);
+        }
+
+        void removeRecipeAt(size_t index) {
+            if (index >= recipes.size()) { return; }
+            recipes.erase(recipes.begin() + index);
+        }
+
+        void duplicateSource(size_t index) {
+            if (index >= sources.size()) { return; }
+            DropSource copy = sources[index];
+            sources.insert(sources.begin() + index, copy);
+        }
+
+        void removeSourceAt(size_t index) {
+            if (index >= sources.size()) { return; }
+            sources.erase(sources.begin() + index);
+        }
+    };
 
     struct PFrameIndex {
     public:
-        struct LData {
-        public:
-            constexpr LData() : _data() {}
-            constexpr LData(int32_t value, bool flagVal) : _data(uint8_t(value & 0x7F) | uint8_t(flagVal ? 0x80 : 0x00)) {}
+        uint32_t data;
 
-            constexpr operator uint8_t() const {
-                return _data;
-            }
-
-            void setValue(int32_t value) {
-                _data = (_data & 0x80) | uint8_t(value & 0x7F);
-            }
-            constexpr uint8_t getValue() const {
-                return (_data & 0x7F);
-            }
-
-            void setFlag(bool value) {
-                _data = (_data & 0x7F) | uint8_t(value ? 0x80 : 0x00);
-            }
-            constexpr bool getFlag() const {
-                return bool(_data & 0x80);
-            }
-        private:
-            uint8_t _data;
-        };
-
-        uint16_t frame;
-        LData variation;
-        uint8_t layer;
-
-        constexpr PFrameIndex() : variation(), layer(), frame() {}
-        constexpr PFrameIndex(int32_t frame, int32_t variation, int32_t layer, bool isEmissive) :
-            frame(frame < 0 ? 0xFFFF : uint16_t(frame)),
-            variation(variation < 0 ? 0xFF : uint8_t(variation), isEmissive),
-            layer(layer)
+        constexpr PFrameIndex() : data() {}
+        constexpr PFrameIndex(int32_t frame, int32_t layer, bool isEmissive) :
+            data((frame & 0x7FFFFFU) | ((frame & 0x7FU) << 23) | (isEmissive ? 0x80000000U : 0x00))
         {}
 
-        PFrameIndex(const std::string& path) : PFrameIndex(path.c_str(), path.size()) { }
-        PFrameIndex(const char* path) : PFrameIndex(path, strlen(path)) {}
-        PFrameIndex(const char* path, size_t size) : PFrameIndex() {
-            using namespace JCore;
-            ConstSpan<char> span(path, size);
-            size_t curD = 0;
-            size_t ind = span.lastIndexOf('_');
+        constexpr PFrameIndex(uint32_t data) :
+            data(data)
+        {}
 
-            if (ind == ConstSpan<char>::npos) {
+        PFrameIndex(std::string_view view) : PFrameIndex() {
+            static constexpr size_t NPOS = std::string_view::npos;
+            using namespace JCore;
+            size_t curD = 0;
+            size_t ind = view.find_last_of('.');
+
+            if (ind == NPOS) {
                 reinterpret_cast<uint32_t&>(*this) = 0x00U;
                 return;
             }
 
-            static constexpr size_t NPOS = ConstSpan<char>::npos;
-            while (ind != NPOS) {
-                auto cur = span.slice(0, ind);
-                size_t nInd = cur.lastIndexOf('_');
-                cur = span.slice(ind + 1);
+            view = view.substr(0, ind);
+            ind = view.find_last_of('_');
 
-                if (tolower(cur[0]) != 'e') {
-                    switch (curD) {
-                        default: goto end;
-                        case 0:
-                            Helpers::tryParseInt<uint16_t>(cur, frame, Helpers::IBase_10, 0);
-                            break;
-                        case 1: {
-                            uint8_t lr = 0;
-                            Helpers::tryParseInt<uint8_t>(cur, lr, Helpers::IBase_10, 0);
-                            variation.setValue(lr);
-                            break;
-                        }
-                        case 2:
-                            Helpers::tryParseInt<uint8_t>(cur, layer, Helpers::IBase_10, 0);
-                            break;
-                    }
-                    curD++;
+            data = 0;
+            while (ind != NPOS) {
+                auto cur = view.substr(ind + 1);
+                /*               size_t nInd = cur.find_last_of('_');
+                               cur = nInd != std::string_view::npos ?  cur.substr(0, nInd) : cur;*/
+
+                if (tolower(cur[0]) == 'e') {
+                    data |= 0x80000000U;
                 }
-                else { variation.setFlag(true); }
+
+                switch (curD) {
+                default: goto end;
+                case 0: {
+                    uint32_t frame{ 0 };
+                    Utils::tryParseInt<uint32_t>(cur, frame, Utils::IBase_10, 0);
+                    data |= (frame & 0x7FFFFFU);
+                    break;
+                }
+                case 1: {
+                    uint32_t frame{ 0 };
+                    Utils::tryParseInt<uint32_t>(cur, frame, Utils::IBase_10, 0);
+                    data |= (frame & 0x7FU) << 23;
+                    break;
+                }
+                }
+                curD++;
 
             end:
-                if (variation.getFlag() && curD >= 3) { break; }
+                if ((data & 0x80000000U) && curD >= 1) { break; }
 
-                span = span.slice(0, ind);
-                ind = span.slice(0, ind).lastIndexOf('_');
+                view = view.substr(0, ind);
+                ind = view.substr(0, ind).find_last_of('_');
             }
         }
 
+        constexpr bool isEmissive() const { return (data & 0x80000000U) != 0; }
+        constexpr void setIndex(uint32_t index) {
+            data = (data & ~0x7FFFFFU) | (index & 0x7FFFFFU);
+        }
+
+        constexpr int32_t getIndex() const { return int32_t(data & 0x7FFFFFU); }
+        constexpr int32_t getLayer() const { return int32_t(data >> 23) & 0x7F; }
+
         bool operator==(const PFrameIndex& other) const {
-            return reinterpret_cast<const uint32_t&>(*this) == reinterpret_cast<const uint32_t&>(other);
+            return data == other.data;
         }
 
         bool operator!=(const PFrameIndex& other) const {
-            return reinterpret_cast<const uint32_t&>(*this) != reinterpret_cast<const uint32_t&>(other);
+            return data != other.data;
         }
 
         bool operator<(const PFrameIndex& other) const {
-            return reinterpret_cast<const uint32_t&>(*this) < reinterpret_cast<const uint32_t&>(other);
+            return data < other.data;
         }
 
         bool operator>(const PFrameIndex& other) const {
-            return reinterpret_cast<const uint32_t&>(*this) > reinterpret_cast<const uint32_t&>(other);
+            return data > other.data;
         }
 
         constexpr operator uint32_t() const {
-            return uint32_t(frame) | (uint32_t(variation) << 8) | (uint32_t(layer) << 16);
+            return data;
         }
         PFrameIndex& operator=(uint32_t value) {
-            *reinterpret_cast<uint32_t*>(this) = value;
+            data = value;
             return *this;
         }
     };
+    static constexpr PFrameIndex NullIdx = PFrameIndex(0xFFFFFFFFU);
 
     struct PFramePath {
         std::string path{};
@@ -1733,76 +1961,54 @@ namespace Projections {
         JCore::DataFormat format{};
 
         PFramePath() : path(""), index(), format() {}
-        PFramePath(const std::string& str, PFrameIndex idx) : path(str), index(idx), format() {
+        PFramePath(std::string_view str, PFrameIndex idx) : path(str), index(idx), format() {
             using namespace JCore;
-            if (Helpers::endsWith(str.c_str(), ".png", false)) {
+            if (Utils::endsWith(str, ".png", false)) {
                 format = FMT_PNG;
             }
-            else if (Helpers::endsWith(str.c_str(), ".bmp", false)) {
+            else if (Utils::endsWith(str, ".bmp", false)) {
                 format = FMT_BMP;
             }
-            else if (Helpers::endsWith(str.c_str(), ".dds", false)) {
+            else if (Utils::endsWith(str, ".dds", false)) {
                 format = FMT_DDS;
             }
-            else if (Helpers::endsWith(str.c_str(), ".jtex", false)) {
+            else if (Utils::endsWith(str, ".jtex", false)) {
                 format = FMT_JTEX;
             }
+            else {
+                format = FMT_UNKNOWN;
+            }
         }
 
-        bool getInfo(JCore::ImageData& img) {
+        bool getInfo(JCore::ImageData& img, std::string_view root) const {
             using namespace JCore;
+
+            std::string path = IO::combine(root, this->path);
             switch (format)
             {
-                case JCore::FMT_PNG:  return Png::getInfo(path.c_str(), img);
-                case JCore::FMT_BMP:  return Bmp::getInfo(path.c_str(), img);
-                case JCore::FMT_DDS:  return DDS::getInfo(path.c_str(), img);
-                case JCore::FMT_JTEX: return JTEX::getInfo(path.c_str(), img);
-                default: return false;
+            case JCore::FMT_PNG:  return Png::getInfo(path.c_str(), img);
+            case JCore::FMT_BMP:  return Bmp::getInfo(path.c_str(), img);
+            case JCore::FMT_DDS:  return DDS::getInfo(path.c_str(), img);
+            case JCore::FMT_JTEX: return JTEX::getInfo(path.c_str(), img);
+            default: return false;
             }
         }
-
-        bool decodeImage(JCore::ImageData& img) {
+        bool decodeImage(JCore::ImageData& img, std::string_view root) const {
             using namespace JCore;
+
+            std::string path = IO::combine(root, this->path);
             switch (format)
             {
-                case JCore::FMT_PNG:  return Png::decode(path.c_str(), img);
-                case JCore::FMT_BMP:  return Bmp::decode(path.c_str(), img);
-                case JCore::FMT_DDS:  return DDS::decode(path.c_str(), img);
-                case JCore::FMT_JTEX: return JTEX::decode(path.c_str(), img);
-                default: return false;
+            case JCore::FMT_PNG:  return Png::decode(path.c_str(), img);
+            case JCore::FMT_BMP:  return Bmp::decode(path.c_str(), img);
+            case JCore::FMT_DDS:  return DDS::decode(path.c_str(), img);
+            case JCore::FMT_JTEX: return JTEX::decode(path.c_str(), img);
+            default: return false;
             }
         }
 
-        constexpr bool isValid() const {
-            return index != 0xFFFFFFFFU && path.length() > 0;
-        }
-    };
-
-    struct PFrameVariation {
-        bool hasEmission{};
-        size_t pathStart{ 0 };
-        size_t frames{ 0 };
-        size_t minFrame = SIZE_MAX;
-
-        void applyFrom(size_t variation, const std::vector<PFramePath>& paths) {
-            pathStart = SIZE_MAX;
-            minFrame = SIZE_MAX;
-
-            size_t i = 0;
-            hasEmission = false;
-            for (auto& path : paths) {
-                auto& index = path.index;
-                if (index.variation.getValue() == variation) {
-                    if (pathStart == SIZE_MAX) {
-                        pathStart = i;
-                    }
-                    hasEmission |= index.variation.getFlag();
-                    minFrame = std::min<size_t>(minFrame, index.frame);
-                    frames = std::max<size_t>(size_t(index.frame) + 1, frames);
-                }
-                i++;
-            }
-            frames -= minFrame;
+        bool isValid() const {
+            return index != NullIdx && path.length() > 0;
         }
     };
 
@@ -1810,823 +2016,627 @@ namespace Projections {
         return lhs.index > rhs.index;
     }
 
-    struct PFrameLayer {
-        size_t variationCount{ 0 };
-        std::vector<PFrameVariation> variations{};
-        std::vector<PFramePath> paths{};
+    struct AudioVariant {
+        std::string path{};
+        JCore::AudioData audio{};
 
-        int32_t indexOfPFrame(const std::vector<PFramePath>& paths, PFrameIndex idx) {
-            for (size_t i = 0; i < paths.size(); i++) {
-                if (paths[i].index == idx) { return int32_t(i); }
-            }
-            return -1;
+        bool isValid() const {
+            return audio.depth == 16 && audio.sampleRate > 0 && audio.sampleRate <= 48000 && audio.channels > 0 && audio.channels <= 2 && audio.sampleCount > 0;
         }
 
-        void addPath(const std::string& path, PFrameIndex index) {
-            if (indexOfPFrame(paths, index) < 0) {
-                paths.emplace_back(path, index);
-                variationCount = std::max<size_t>(index.variation.getValue() + 1, variationCount);
-            }
-        }
-
-        void apply() {
-            std::vector<PFramePath> temp(paths.begin(), paths.end());
-            size_t frames = 0;
-            variations.resize(variationCount);
-
-            std::sort(temp.begin(), temp.end(), compare);
-            for (size_t i = 0; i < variationCount; i++) {
-                auto& vari = variations[i];
-                vari.applyFrom(i, temp);
-                frames += vari.frames * (vari.hasEmission ? 2 : 1);
-            }
-            paths.resize(frames);
-
-            for (size_t i = 0; i < frames; i++) {
-                paths[i].path = "";
-                paths[i].index = PFrameIndex(0xFFFF, 0xFF, 0xFF, true);
-            }
-
-            size_t offsets[32]{ 0 };
-
-            size_t offset = 0;
-            for (size_t i = 0; i < variationCount; i++) {
-                const auto& vari = variations[i];
-                offsets[i] = offset;
-                offset += vari.hasEmission ? vari.frames * 2 : vari.frames;
-            }
-
-            for (auto& tmp : temp) {
-                auto& idx = tmp.index;
-                size_t varInd = idx.variation.getValue();
-                auto& vari = variations[varInd];
-                offset = offsets[varInd];
-
-                if (vari.minFrame > 0) {
-                    idx.frame = uint16_t(idx.frame - vari.minFrame);
-                }
-
-                size_t cc = idx.frame + (idx.variation.getFlag() ? vari.frames : 0);
-                paths[offset + cc] = tmp;
-            }
-        }
-    };
-
-    struct AnimationSpeed {
-        AnimSpeedType type{};
-        float duration{};
-        uint16_t ticks{};
-
-        void reset() {
-            type = AnimSpeedType::ANIM_S_Ticks;
-            ticks = 4;
-            duration = 16.6f;
+        void read(const json& jsonF) {
+            path = jsonF.is_string() ? jsonF.get<std::string>() : std::string{};
         }
 
         void write(json& jsonF) const {
-            jsonF["type"] = int32_t(type);
-            switch (type)
-            {
-                case Projections::ANIM_S_Ticks:
-                    jsonF["ticksPerFrame"] = ticks;
-                    break;
-                case Projections::ANIM_S_Duration:
-                    jsonF["duration"] = duration;
-                    break;
+            jsonF = path;
+        }
+
+        bool check(std::string_view root) {
+            std::string path = JCore::IO::combine(root, this->path);
+            return JCore::Wav::getInfo(path, audio) && isValid();
+        }
+    };
+
+    struct PrFrame {
+        float frameDuration{};
+        PFrameFlags flags{};
+
+        PFramePath path{};
+        PFramePath pathE{};
+        CRCBlocks block[2]{};
+
+        void reset() {
+            frameDuration = 0.0f;
+            flags = PFrameFlags::PFrm_None;
+            path = PFramePath("", NullIdx);
+            pathE = PFramePath("", NullIdx);
+
+            block[0].clear();
+            block[1].clear();
+        }
+    };
+
+    struct PrLayer {
+        std::string name{};
+        PLayerFlags flags{};
+
+        void reset() {
+            name = "Default";
+            flags = PLa_DefaultState;
+        }
+
+        void read(const json& jsonF) {
+            reset();
+            if (jsonF.is_object()) {
+                name = JCore::IO::readString(jsonF, "name", "Default");
+                flags = jsonF.value("defaultState", false) ? PLa_DefaultState : PLa_None;
+                flags = PLayerFlags(flags | (jsonF.value("isTransparent", false) ? PLa_IsTransparent : PLa_None));
             }
+        }
+
+        void write(json& jsonF) const {
+            jsonF["name"] = name;
+            jsonF["defaultState"] = (flags & PLa_DefaultState) != 0;
+            jsonF["isTransparent"] = (flags & PLa_IsTransparent) != 0;
+        }
+
+        void write(const Stream& stream) const {
+            writeShortString(name, stream);
+            stream.writeValue(flags);
+        }
+    };
+
+    enum TargetMode : uint8_t {
+        TGT_LAST_VALID = 0x00,
+        TGT_NEXT_VALID,
+        TGT_SPECIFIC_VALID,
+
+        TGT_COUNT
+    };
+
+    struct FrameTarget {
+        TargetMode mode{};
+        int32_t layer{ -1 };
+        int32_t frame{ -1 };
+        bool emission{ false };
+
+        void reset() {
+            mode = TargetMode::TGT_LAST_VALID;
+            layer = -1;
+            frame = -1;
+            emission = false;
+        }
+
+        constexpr bool isValid(size_t frames, size_t layers, bool isSrc) const {
+            if (!isSrc && mode != TGT_SPECIFIC_VALID && mode < TGT_COUNT) {
+                return true;
+            }
+
+            if (layer < 0 || frame < 0) { return false; }
+            return layer < layers && frame < frames;
+        }
+
+        bool read(const json& jsonF) {
+            if (!jsonF.is_object()) {
+                return false;
+            }
+            mode = jsonF.value("mode", TGT_LAST_VALID);
+            layer = jsonF.value("layer", -1);
+            frame = jsonF.value("frame", -1);
+            emission = jsonF.value("emission", false);
+            return true;
+        }
+
+        void write(json& jsonF) const {
+            jsonF["mode"] = mode;
+            jsonF["layer"] = layer;
+            jsonF["frame"] = frame;
+            jsonF["emission"] = emission;
+        }
+    };
+
+    struct FrameInfo {
+        float frameDuration{};
+        FrameTarget sourceStart{};
+        FrameTarget sourceEnd{};
+        FrameTarget target{};
+
+        bool read(const json& jsonF) {
+            if (!jsonF.is_object()) {
+                return false;
+            }
+
+            bool valid = true;
+            valid &= sourceStart.read(JCore::IO::getObject(jsonF, "sourceStart"));
+            valid &= sourceEnd.read(JCore::IO::getObject(jsonF, "sourceEnd"));
+            valid &= target.read(JCore::IO::getObject(jsonF, "target"));
+            return valid;
+        }
+
+        void write(json& jsonF) const {
+            sourceStart.write(jsonF["sourceStart"]);
+            sourceEnd.write(jsonF["sourceEnd"]);
+            target.write(jsonF["target"]);
+        }
+    };
+
+    struct StackThreshold {
+        int32_t stack{};
+        int32_t frames{};
+
+        void reset() {
+            stack = 0;
+            frames = 0;
+        }
+
+        void read(const json& jsonF) {
+            reset();
+            if (jsonF.is_object()) {
+                stack = jsonF.value("stack", 0);
+                frames = jsonF.value("frames", 0);
+            }
+        }
+
+        void write(json& jsonF) const {
+            jsonF["stack"] = stack;
+            jsonF["frames"] = frames;
+        }
+
+        void write(const Stream& stream) const {
+            stream.writeValue(stack);
+            stream.writeValue(frames);
+        }
+    };
+
+    struct AudioInfo {
+        AudioMode type{};
+        std::vector<AudioVariant> variants{};
+
+        void reset() {
+            type = AudioMode::Aud_SFX;
+            variants.clear();
+        }
+
+        bool prepare(std::string_view root) {
+            bool audioValid = true;
+            for (auto& aud : variants) {
+                if (!aud.check(root)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool hasValidAudio() const {
+            uint32_t sRate = 0;
+            size_t sCount = 0;
+            uint32_t channels = 0;
+
+            for (size_t i = 0; i < variants.size(); i++) {
+                auto& variant = variants[i];
+                if (!variant.isValid()) {
+                    return false;
+                }
+
+                if (i == 0) {
+                    sRate = variant.audio.sampleRate;
+                    sCount = variant.audio.sampleCount;
+                    channels = variant.audio.channels;
+                }
+                else if (variant.audio.sampleRate != sRate || variant.audio.sampleCount != sCount || variant.audio.channels != channels) {
+                    return false;
+                }
+            }
+            return variants.size() > 0;
+        }
+
+        void read(const json& jsonF) {
+            reset();
+            if (jsonF.is_object()) {
+                type = jsonF.value("type", AudioMode::Aud_SFX);
+
+                auto& aVars = JCore::IO::getObject(jsonF, "variant");
+                if (aVars.is_string()) {
+                    variants.resize(1);
+                    variants[0].read(aVars);
+                }
+                else if (aVars.is_array()) {
+                    variants.reserve(aVars.size());
+                    for (size_t i = 0; i < aVars.size(); i++) {
+                        if (aVars[i].is_string()) {
+                            variants.emplace_back().read(aVars[i]);
+                        }
+                    }
+                }
+            }
+        }
+
+        void write(json& jsonF) const {
+            jsonF["type"] = type;
+
+            if (variants.size() == 1) {
+                variants[0].write(jsonF["variant"]);
+            }
+            else if (variants.size() > 2) {
+                json::array_t aVars = json::array_t{};
+                for (auto& aud : variants) {
+                    aud.write(aVars.emplace_back());
+                }
+                jsonF["variant"] = aVars;
+            }
+        }
+
+        void write(const Stream& stream, std::string_view root, JCore::AudioData& audioBuffer) const {
+            using namespace JCore;
+            if (hasValidAudio()) {
+                auto& var0 = variants[0];
+                size_t pos = stream.tell();;
+
+                stream.writeValue(uint8_t(type | (var0.audio.channels > 1 ? Aud_IsStereo : 0x00)));
+                stream.writeValue<uint32_t>(var0.audio.sampleRate);
+                stream.writeValue<size_t>(var0.audio.sampleCount);
+                stream.writeValue<uint16_t>(uint16_t(variants.size()));
+
+                size_t byteSize = var0.audio.sampleCount * (var0.audio.channels > 1 ? 4 : 2);
+                std::string aPath{};
+                for (auto& var : variants) {
+                    aPath = JCore::IO::combine(root, var.path);
+                    if (Wav::decode(aPath.c_str(), audioBuffer)) {
+                        stream.write(audioBuffer.data, byteSize, false);
+                    }
+                    else {
+                        stream.seek(pos, SEEK_SET);
+                        JCORE_ERROR("Failed to decode wave data of audio variant! @ path '{}'", aPath);
+                        goto noData;
+                    }
+                }
+                return;
+            }
+        noData:
+            stream.writeValue(type);
+            stream.writeValue<uint32_t>(0);
+            stream.writeValue<uint32_t>(0);
+            stream.writeValue<uint16_t>(0);
+        }
+    };
+
+    struct PBundleEntry {
+        PType type{};
+        std::string id{};
+        int32_t stack{ 1 };
+        PConditions conditions{};
+        float weight{};
+
+        void reset() {
+            type = PType::PTY_Projection;
+            id = "";
+            stack = 1;
+            conditions.reset();
+            weight = 1.0f;
+        }
+
+        void read(const json& jsonF) {
+            reset();
+            if (jsonF.is_object()) {
+                type = jsonF.value("type", PType::PTY_Projection);
+                id = JCore::IO::readString(jsonF, "id", "");
+                stack = Math::max(jsonF.value("stack", 1), 1);
+                conditions.read(JCore::IO::getObject(jsonF, "conditions"));
+                weight = Math::max(jsonF.value("weight", 1.0f), 0.001f);
+            }
+        }
+
+        void write(json& jsonF) const {
+            jsonF["type"] = type;
+            jsonF["id"] = id;
+            jsonF["stack"] = stack;
+            conditions.write(jsonF["conditions"]);
+            jsonF["weight"] = weight;
         }
 
         void write(const Stream& stream) const {
             stream.writeValue(type);
-            switch (type)
-            {
-                case Projections::ANIM_S_Ticks:
-                    stream.writeValue(ticks);
-                    break;
-                case Projections::ANIM_S_Duration:
-                    stream.writeValue(duration);
-                    break;
-            }
-        }
-
-        void read(json& jsonF, AnimSpeedType type = ANIM_S_Ticks) {
-            reset();
-            if (jsonF.is_object()) {
-                this->type = AnimSpeedType(jsonF.value("type", ANIM_S_Ticks));
-                switch (this->type)
-                {
-                    case Projections::ANIM_S_Ticks:
-                        ticks = jsonF.value<uint16_t>("ticksPerFrame", 4);
-                        break;
-                    case Projections::ANIM_S_Duration:
-                        duration = jsonF.value<float>("duration", 16.6f);
-                        break;
-                }
-                return;
-            }
-
-            this->type = type;
-            if (jsonF.is_number()) {
-                switch (this->type)
-                {
-                    case Projections::ANIM_S_Ticks:
-                        ticks = jsonF.get<uint16_t>();
-                        break;
-                    case Projections::ANIM_S_Duration:
-                        duration = jsonF.get<float>();
-                        break;
-                }
-            }
+            writeShortString(id, stream);
+            stream.writeValue(stack);
+            conditions.write(stream);
+            stream.writeValue(weight);
         }
     };
 
-    struct ProjectionVariation {
-        std::string name{ "Default" };
-        TileDrawMode drawMode{};
-        bool directEmission{};
-        AnimationMode animMode{};
-        AnimationSpeed animSpeed{};
-        int32_t loopStart{};
+    struct PBundle {
+        PMaterial material{};
+        int32_t minSize{};
+        int32_t maxSize{};
+        std::vector<PBundleEntry> entries{};
 
-        void setDefaults() {
-            name = "Default";
-            drawMode = TileDrawMode::TDR_Default;
-            animMode = AnimationMode::ANIM_None;
-            directEmission = false;
-            animSpeed.reset();
-            loopStart = 0;
+        void reset() {
+            material.reset();
+
+            minSize = 1;
+            maxSize = 1;
+
+            entries.resize(1);
+            entries[0].reset();
         }
 
-        void copyFrom(const ProjectionVariation& other, VariationApplyMode copyMask) {
-            if (copyMask & VariationApplyMode::VAR_APPLY_Name) {
-                name = other.name;
-            }
-
-            if (copyMask & VariationApplyMode::VAR_APPLY_AnimMode) {
-                animMode = other.animMode;
-            }
-
-            if (copyMask & VariationApplyMode::VAR_APPLY_AnimSpeed) {
-                animSpeed = other.animSpeed;
-            }
-
-            if (copyMask & VariationApplyMode::VAR_APPLY_LoopStart) {
-                loopStart = other.loopStart;
-            }
-        }
-
-        void read(json& jsonF) {
-            setDefaults();
+        void read(const json& jsonF, std::string_view root) {
+            using namespace JCore;
+            reset();
             if (jsonF.is_object()) {
-                name = jsonF.value("name", "Default");
-                directEmission = jsonF.value<bool>("directEmission", false);
-                animMode = AnimationMode(jsonF.value<int32_t>("animMode", 0));
+                material.read(JCore::IO::getObject(jsonF, "material"), root);
+                minSize = Math::max(jsonF.value("minSize", 1), 1);
+                maxSize = Math::max(jsonF.value("maxSize", 1), minSize);
 
-                auto& aSpeed = jsonF["animationSpeed"];
-                if (aSpeed.is_object()) {
-                    animSpeed.read(aSpeed);
-                }
-                else {
-                    aSpeed = jsonF["ticksPerFrame"];
-                    if (aSpeed.is_number_unsigned()) {
-                        animSpeed.read(aSpeed, AnimSpeedType::ANIM_S_Ticks);
-                    }
-                    else {
-                        animSpeed.read(jsonF["frameDuration"], AnimSpeedType::ANIM_S_Duration);
+                auto& ent = JCore::IO::getObject(jsonF, "entries");
+                if (ent.is_array() && ent.size() > 0) {
+                    entries.resize(ent.size());
+                    for (size_t i = 0; i < ent.size(); i++) {
+                        entries[i].read(ent[i]);
                     }
                 }
-                loopStart = jsonF.value("loopStart", 0);
             }
         }
 
         void write(json& jsonF) const {
-            jsonF["name"] = name;
-            jsonF["directEmission"] = directEmission;
-            jsonF["animMode"] = int32_t(animMode);
-            animSpeed.write(jsonF["animationSpeed"]);
-            jsonF["loopStart"] = loopStart;
+            material.write(jsonF["material"]);
+            jsonF["minSize"] = minSize;
+            jsonF["maxSize"] = maxSize;
+
+            json::array_t arr{};
+            for (size_t i = 0; i < entries.size(); i++) {
+                entries[i].write(arr.emplace_back());
+            }
+            jsonF["entries"] = arr;
         }
 
         void write(const Stream& stream) const {
-            writeShortString(name, stream);
-            stream.writeValue(drawMode);
-            stream.writeValue(animMode);
-            animSpeed.write(stream);
-            stream.writeValue(uint16_t(loopStart));
+            material.write(stream);
+            stream.writeValue(minSize);
+            stream.writeValue(maxSize);
+            stream.writeValue(int32_t(entries.size()));
+
+            for (size_t i = 0; i < entries.size(); i++) {
+                entries[i].write(stream);
+            }
         }
     };
 
-    struct ProjectionLayer {
+    struct FrameMask {
+        bool compress{};
         std::string name{};
-        uint8_t x{}, y{};
-        uint16_t width{}, height{};
+        std::string path{};
 
-        uint8_t defaultVariation{ 0 };
-        ProjectionVariation variations[32];
-
-        void setDefault() {
-            name = "Default";
-            for (size_t i = 0; i < 32; i++) {
-                variations[i].setDefaults();
-            }
-            defaultVariation = 0;
+        void reset() {
+            compress = true;
+            path = "";
+            name = "";
         }
 
-        void read(json& jsonF, const PFrameLayer* frameLayer) {
+        void checkName() {
             using namespace JCore;
-            name = IO::readString(jsonF["name"], "Default");
-
-            for (size_t i = 0; i < 32; i++) {
-                variations[i].setDefaults();
+            if (Utils::isWhiteSpace(name) &&
+                !Utils::isWhiteSpace(path)) {
+                name = IO::getName(path, true);
             }
+        }
 
-            auto& vars = jsonF["variations"];
-            if (vars.is_array() && vars.size() > 0) {
-                size_t len = std::min<size_t>(vars.size(), frameLayer ? frameLayer->variationCount : 32);
-                for (size_t i = 0; i < len; i++) {
-                    variations[i].read(vars[i]);
+        void read(const json& jsonF) {
+            reset();
+            if (jsonF.is_object()) {
+                compress = jsonF.value("compress", true);
+                path = JCore::IO::readString(jsonF, "path", "");
+                name = JCore::IO::readString(jsonF, "name", "");
+                checkName();
+            }
+        }
+
+        void write(json& jsonF) const {
+            jsonF["compress"] = compress;
+            jsonF["path"] = path;
+            jsonF["name"] = name;
+        }
+
+        void write(const Stream& stream, std::string_view root, int32_t width, int32_t height) const;
+    };
+
+    struct Projection {
+        PMaterial material{};
+
+        float frameRate{};
+        float loopStart{};
+
+        std::string framePath{};
+        int32_t width{};
+        int32_t height{};
+
+        AnimationMode animMode{};
+
+        std::vector<PrLayer> layers{};
+        std::vector<PrFrame> frames{};
+
+        std::vector<FrameInfo> frameInfo{};
+        std::vector<StackThreshold> stackThresholds{};
+        std::vector<Tag> tags{};
+        std::vector<std::string> rawTags{};
+        std::vector<FrameMask> masks{};
+        AudioInfo audioInfo;
+
+        bool prepared;
+
+        void reset() {
+            material.reset();
+            audioInfo.reset();
+            frames.clear();
+            layers.clear();
+
+            masks.clear();
+
+            frameInfo.clear();
+
+
+            tags.clear();
+            rawTags.clear();
+            stackThresholds.clear();
+
+            layers.resize(1);
+            layers[0].reset();
+
+            frameRate = 30.0f;
+            loopStart = 0.0f;
+            animMode = AnimationMode::ANIM_FrameSet;
+
+            framePath = "Frames";
+            prepared = false;
+        }
+
+        void refreshTags() {
+            rawTags.clear();
+            for (auto& tag : tags) {
+                tag.addTag(rawTags, material.root);
+            }
+        }
+
+        bool read(const json& jsonF, std::string_view root) {
+            using namespace JCore;
+            reset();
+            if (jsonF.is_object()) {
+                material.read(JCore::IO::getObject(jsonF, "material"), root);
+
+                framePath = IO::readString(jsonF, "framePath", "Frames");
+
+                frameRate = Math::clamp(jsonF.value("frameRate", 30.0f), 0.001f, 60.0f);
+                loopStart = Math::max(jsonF.value("loopStart", 0.0f), 0.0f);
+                animMode = jsonF.value("animMode", ANIM_FrameSet);
+
+                auto& lrs = JCore::IO::getObject(jsonF, "layers");
+                if (lrs.is_array() && lrs.size() > 0) {
+                    layers.clear();
+                    layers.reserve(lrs.size());
+                    for (size_t i = 0; i < lrs.size() && layers.size() < PROJ_MAX_LAYERS; i++) {
+                        if (lrs[i].is_object()) {
+                            layers.emplace_back().read(lrs[i]);
+                        }
+                    }
+                    if (layers.size() < 1) {
+                        layers.emplace_back().reset();
+                    }
                 }
-            }
-            else {
-                vars = jsonF["variation"];
-                if (vars.is_object()) {
-                    variations[0].read(vars);
-                    if (vars.value("useForAll", false)) {
-                        if (frameLayer) {
-                            for (size_t i = 1; i < frameLayer->variationCount; i++) {
-                                variations[i] = variations[0];
-                            }
+
+                auto& fInfo = JCore::IO::getObject(jsonF, "frameInfo");
+                if (fInfo.is_array() && fInfo.size() > 0) {
+                    frameInfo.reserve(fInfo.size());
+                    for (size_t i = 0; i < fInfo.size(); i++) {
+                        if (fInfo[i].is_object()) {
+                            frameInfo.emplace_back().read(fInfo[i]);
                         }
                     }
                 }
-            }
 
-            int32_t ind = jsonF.value<int32_t>("defaultVariation", 0);
-            defaultVariation = uint8_t(ind < 0 ? 0xFF : ind);
-        }
-
-        void write(json& jsonF, const PFrameLayer* frameLayer) const {
-            jsonF["name"] = name;
-            if (frameLayer && frameLayer->variationCount > 1) {
-                json::array_t arr{};
-                for (size_t i = 0; i < frameLayer->variationCount; i++) {
-                    json obj{};
-                    variations[i].write(obj);
-                    arr.push_back(obj);
-                }
-                jsonF["variations"] = arr;
-            }
-            else {
-                variations[0].write(jsonF["variation"]);
-            }
-            jsonF["defaultVariation"] = int32_t(defaultVariation);
-        }
-
-        void write(const Stream& stream, const PFrameLayer& frameLayer) const {
-            writeShortString(name, stream);
-            stream.writeValue(x);
-            stream.writeValue(y);
-
-            stream.writeValue(width);
-            stream.writeValue(height);
-            stream.write(&frameLayer.variationCount, 1, false);
-            stream.writeValue(defaultVariation);
-
-            for (size_t i = 0; i < frameLayer.variationCount; i++) {
-                auto& var = frameLayer.variations[i];
-                stream.writeValue(uint16_t(var.frames));
-                variations[i].write(stream);
-            }
-        }
-    };
-
-    struct ProjectionGroup;
-    struct Projection {
-        std::string name{};
-        std::string description{};
-
-        uint16_t width, height;
-        std::vector<PixelTileIndex> tiles{};
-        std::vector<ProjectionLayer> layers{};
-        ProjectionMaterial material{};
-        bool hasSameResolution{ true };
-
-        int32_t lookOffset[2]{};
-        float maxLookDistance{};
-
-        std::string rootName{};
-        fs::path rootPath{};
-        std::vector<PFrameLayer> framesPaths{};
-
-        bool isValid{ false };
-        size_t maxTiles{};
-
-        size_t getLayerCount() const { return std::min(framesPaths.size(), layers.size()); }
-
-        void load(json& cfg, const fs::path& root, const std::string& rootName);
-        void load(ProjectionGroup& group, bool premultiply, uint8_t alphaClip, JCore::ImageData& imgDat);
-
-        void fixLayerCount() {
-            if (isValid) {
-                layers.resize(framesPaths.size());
-            }
-        }
-        void reset() {
-            tiles.clear();
-            layers.clear();
-            maxTiles = 0;
-            hasSameResolution = true;
-        }
-
-        void read(json& jsonF, bool valid) {
-            using namespace JCore;
-            layers.clear();
-            name = IO::readString(jsonF["name"], "");
-            description = IO::readString(jsonF["description"], "");
-
-            hasSameResolution = jsonF.value("sameResolution", true);
-
-            isValid = valid;
-            material.read(jsonF["material"]);
-            auto& arr = jsonF["lookOffset"];
-            if (arr.size() > 1) {
-                lookOffset[0] = arr[0].get<int32_t>();
-                lookOffset[1] = arr[1].get<int32_t>();
-            }
-            else {
-                lookOffset[0] = 0;
-                lookOffset[1] = 0;
-            }
-            maxLookDistance = jsonF.value("maxLookDistance", 256.0f);
-
-            auto& lrs = jsonF["layers"];
-            if (lrs.is_array() && lrs.size() > 0) {
-                size_t i = 0;
-                for (auto& layer : lrs) {
-                    if (layer.is_object()) {
-                        layers.emplace_back().read(layer, valid ? &framesPaths[i++] : nullptr);
-                    }
-                    if (i >= framesPaths.size()) { break; }
-                }
-            }
-            else {
-                lrs = jsonF["layer"];
-                if (lrs.is_object()) {
-                    layers.emplace_back().read(lrs, valid ? &framesPaths[0] : nullptr);
-                }
-                else {
-                    layers.emplace_back().setDefault();
-                }
-            }
-            fixLayerCount();
-
-            if (isValid) {
-                size_t reso = width * height;
-                for (int32_t i = 0; i < layers.size(); i++) {
-                    auto& lr = layers[i];
-                    auto& lrP = framesPaths[i];
-                    for (size_t j = 0; j < lrP.variationCount; j++) {
-                        auto& vari = lrP.variations[j];
-                        auto& variT = lr.variations[j];
-                        variT.drawMode = vari.hasEmission ? TileDrawMode::TDR_WithGlow : TileDrawMode::TDR_Default;
+                auto& fMasks = JCore::IO::getObject(jsonF, "masks");
+                if (fMasks.is_array() && fMasks.size() > 0) {
+                    masks.reserve(fMasks.size());
+                    for (size_t i = 0; i < fMasks.size(); i++) {
+                        if (fMasks[i].is_object()) {
+                            masks.emplace_back().read(fMasks[i]);
+                        }
                     }
                 }
+
+                auto& tagS = JCore::IO::getObject(jsonF, "tags");
+                if (tagS.is_array() && tagS.size() > 0) {
+                    tags.reserve(tagS.size());
+                    for (size_t i = 0; i < tagS.size(); i++) {
+                        if (tagS[i].is_string()) {
+                            tags.emplace_back().read(tagS[i]);
+                        }
+                    }
+                }
+
+                auto& stackT = JCore::IO::getObject(jsonF, "stackThresholds");
+                if (stackT.is_array() && stackT.size() > 0) {
+                    stackThresholds.reserve(stackT.size());
+                    for (size_t i = 0; i < stackT.size(); i++) {
+                        if (stackT[i].is_object()) {
+                            stackThresholds.emplace_back().read(stackT[i]);
+                        }
+                    }
+                }
+                audioInfo.read(JCore::IO::getObject(jsonF, "audio"));
+
+                refreshTags();
+                return true;
             }
+            return false;
         }
         void write(json& jsonF) const {
-            jsonF["name"] = name;
-            jsonF["description"] = description;
-
             material.write(jsonF["material"]);
-            jsonF["lookOffset"] = json::array_t(lookOffset, lookOffset + 2);
-            jsonF["maxLookDistance"] = maxLookDistance;
-            jsonF["sameResolution"] = hasSameResolution;
 
-            if (layers.size() > 1) {
-                json::array_t arr{};
-                size_t i = 0;
-                for (auto& layer : layers) {
-                    layer.write(arr.emplace_back(json()), isValid ? &framesPaths[i++] : nullptr);
-                    if (i >= framesPaths.size()) { break; }
-                }
-                jsonF["layers"] = arr;
+            jsonF["framePath"] = framePath;
+            jsonF["frameRate"] = frameRate;
+            jsonF["loopStart"] = loopStart;
+            jsonF["animMode"] = animMode;
+
+            json::array_t lrs = json::array_t{};
+            for (auto& layer : layers) {
+                layer.write(lrs.emplace_back());
             }
-            else if (layers.size() == 1) {
-                layers[0].write(jsonF["layer"], isValid ? &framesPaths[0] : nullptr);
+            jsonF["layers"] = lrs;
+
+            json::array_t fInfo = json::array_t{};
+            for (auto& fi : frameInfo) {
+                fi.write(fInfo.emplace_back());
             }
+            jsonF["frameInfo"] = fInfo;
+
+            json::array_t fMasks = json::array_t{};
+            for (auto& mask : masks) {
+                mask.write(fMasks.emplace_back());
+            }
+            jsonF["masks"] = fMasks;
+
+            json::array_t tagS = json::array_t{};
+            for (auto& tag : tags) {
+                tag.write(tagS.emplace_back());
+            }
+            jsonF["tags"] = tagS;
+
+            json::array_t stackT = json::array_t{};
+            for (auto& st : stackThresholds) {
+                st.write(stackT.emplace_back());
+            }
+            jsonF["stackThresholds"] = stackT;
+            audioInfo.write(jsonF["audio"]);
         }
 
-        void write(const ProjectionGroup& group, const Stream& stream, const std::vector<PixelTileCH>& rawTiles, const PixelBlockVector& rawBlocks) const;
-    };
+        bool prepare();
+        bool write(const Stream& stream, PBuffers& buffers, float minCompression = 0.25f);
 
-    struct ProjectionGroup;
-    struct ProjectionConfig {
-        std::string path{};
-        std::string group{};
-        fs::path root{};
-        bool ignore{};
-        std::vector<Projection> projections{};
-
-        void clear() {
-            projections.clear();
+        void removeTagAt(size_t i) {
+            if (i >= tags.size()) { return; }
+            tags.erase(tags.begin() + i);
         }
 
-        void save() const;
-        void load(const fs::path& root);
-
-        void addProjection(const char* path) {
-            using namespace JCore;
-
-            char buffer[512]{ 0 };
-            std::string str = root.parent_path().string();
-            size_t namePos = str.length();
-            memcpy(buffer, str.c_str(), str.length());
-            buffer[str.length()] = 0;
-            char* nameStr = buffer + namePos;
-
-            auto& proj = projections.emplace_back();
-            proj.rootName = std::string(path);
-
-            sprintf_s(nameStr, 260, "/%s", path);
-            proj.rootPath = fs::path(buffer);
-        }
-    };
-
-    struct ProjectionAtlas {
-        int32_t width{}, height{};
-
-        ProjectionAtlas() : width(0), height(0) {}
-
-        void setup(uint8_t atlas, const JCore::AtlasDefiniton& definition, std::vector<PixelTileCH>& rawTiles) {
-            using namespace JCore;
-            width = definition.width;
-            height = definition.height;
-
-            size_t i = 0;
-            for (auto& sprite : definition.atlas) {
-                auto& rawTile = rawTiles[sprite.original][0];
-                rawTile.setAtlas(atlas);
-                rawTile.x = sprite.rect.x;
-                rawTile.y = sprite.rect.y;
-            }
+        void duplicateTagAt(size_t i) {
+            if (i >= tags.size()) { return; }
+            Tag copy = tags[i];
+            tags.insert(tags.begin() + i, copy);
         }
 
-        void saveToPNG(int32_t padding, uint8_t atlas, const OutputFormat& format, JCore::ImageData buffer, const Stream& stream, const std::vector<PixelTileCH>& rawTiles, const PixelBlockVector& rawBlocks) const {
-            using namespace JCore;
-            buffer.width = width;
-            buffer.height = height;
+        void removeMaskAt(size_t i) {
+            if (i >= masks.size()) { return; }
+            masks.erase(masks.begin() + i);
+        }
 
-            switch (format.getSize())
-            {
-                default:
-                    buffer.format = TextureFormat::RGBA32;
-                    break;
-                case A_EXP_S_RGBA4444:
-                    buffer.format = TextureFormat::RGBA4444;
-                    break;
-            }
-
-            size_t reso = size_t(width) * height;
-            bool is4Bit = buffer.format == TextureFormat::RGBA4444;
-            memset(buffer.data, 0, reso * (is4Bit ? 2 : 4));
-
-            int32_t offsets[8]
-            {
-                0
-            };
-
-            if (is4Bit) {
-                Color4444* pixels = reinterpret_cast<Color4444*>(buffer.data);
-                for (size_t i = 0; i < rawTiles.size(); i++) {
-                    auto& tile = rawTiles[i][0];
-                    if (tile.getAtlas() != atlas) { continue; }
-                    tile.writeTo(rawBlocks[i], pixels, width);
-
-                    if (padding > 0) {
-                        offsets[0] = tile.y * width + tile.x - 1;
-                        offsets[1] = tile.y * width + tile.x;
-
-                        offsets[2] = tile.y * width + tile.x + 16;
-                        offsets[3] = tile.y * width + tile.x + 15;
-
-                        offsets[4] = (tile.y - 1) * width + tile.x;
-                        offsets[5] = tile.y * width + tile.x;
-
-                        offsets[6] = (tile.y + 16) * width + tile.x;
-                        offsets[7] = (tile.y + 15) * width + tile.x;
-
-                        for (int32_t i = 0; i < 16; i++) {
-
-                            pixels[offsets[0]] = pixels[offsets[1]];
-                            pixels[offsets[2]] = pixels[offsets[3]];
-
-                            pixels[offsets[4]] = pixels[offsets[5]];
-                            pixels[offsets[6]] = pixels[offsets[7]];
-
-                            offsets[0] += width;
-                            offsets[1] += width;
-                            offsets[2] += width;
-                            offsets[3] += width;
-
-                            offsets[4]++;
-                            offsets[5]++;
-                            offsets[6]++;
-                            offsets[7]++;
-                        }
-                    }
-                }
-            }
-            else {
-                Color32* pixels = reinterpret_cast<Color32*>(buffer.data);
-                for (size_t i = 0; i < rawTiles.size(); i++) {
-                    auto& tile = rawTiles[i][0];
-                    if (tile.getAtlas() != atlas) { continue; }
-                    tile.writeTo(rawBlocks[i], pixels, width);
-                    JCORE_ASSERT(tile.x + 16 < width && tile.x >= 0, "Something's wrong here!");
-
-                    if (padding > 0) {
-                        offsets[0] = tile.y * width + tile.x - 1;
-                        offsets[1] = tile.y * width + tile.x;
-
-                        offsets[2] = tile.y * width + tile.x + 16;
-                        offsets[3] = tile.y * width + tile.x + 15;
-
-                        offsets[4] = (tile.y - 1) * width + tile.x;
-                        offsets[5] = tile.y * width + tile.x;
-
-                        offsets[6] = (tile.y + 16) * width + tile.x;
-                        offsets[7] = (tile.y + 15) * width + tile.x;
-
-                        for (int32_t i = 0; i < 16; i++) {
-
-                            pixels[offsets[0]] = pixels[offsets[1]];
-                            pixels[offsets[2]] = pixels[offsets[3]];
-
-                            pixels[offsets[4]] = pixels[offsets[5]];
-                            pixels[offsets[6]] = pixels[offsets[7]];
-
-                            offsets[0] += width;
-                            offsets[1] += width;
-                            offsets[2] += width;
-                            offsets[3] += width;
-
-                            offsets[4]++;
-                            offsets[5]++;
-                            offsets[6]++;
-                            offsets[7]++;
-                        }
-                    }
-                }
-            }
-
-            switch (format.type)
-            {
-                default:
-                    Png::encode(stream, buffer);
-                    break;
-                case A_EXP_DDS:
-                    DDS::encode(stream, buffer);
-                    break;
-                case A_EXP_JTEX:
-                    JTEX::encode(stream, buffer);
-                    break;
-            }
+        void duplicateMaskAt(size_t i) {
+            if (i >= masks.size()) { return; }
+            FrameMask copy = masks[i];
+            masks.insert(masks.begin() + i, copy);
         }
     };
-
-    struct ProjectionGroup {
-        fs::path root{};
-        std::vector<fs::path> icons{};
-        std::vector<ProjectionAtlas> atlases{};
-
-        std::vector<PixelTileCH> rawTiles{};
-        PixelBlockVector rawPIXTiles{};
-        CRCBlockVector crcTiles{};
-        bool useSlow{};
-
-        void clear() {
-            icons.clear();
-            atlases.clear();
-
-            rawTiles.clear();
-            rawPIXTiles.clear();
-            crcTiles.clear();
         }
-
-        PixelTileIndex indexOfTileMemcmp(const uint32_t crc, const PixelBlock& block) const {
-            uint32_t len = uint32_t(rawPIXTiles.size());
-
-            const PixelBlock* ptr{ reinterpret_cast<const PixelBlock*>(rawPIXTiles.data() + 1) };
-            const uint32_t* ptrP{ reinterpret_cast<const uint32_t*>(crcTiles.data() + 1) };
-
-            for (uint32_t i = 1; i < len; i++) {
-                if (crc == *ptrP++ && *ptr == block) {
-                    return PixelTileIndex(i, 0);
-                }
-                ptr++;
-
-                if (crc == *ptrP++ && *ptr == block) {
-                    return PixelTileIndex(i, 1);
-                }
-                ptr++;
-
-                if (crc == *ptrP++ && *ptr == block) {
-                    return PixelTileIndex(i, 2);
-                }
-                ptr++;
-
-                if (crc == *ptrP++ && *ptr == block) {
-                    return PixelTileIndex(i, 3);
-                }
-                ptr++;
-            }
-            return PixelTileIndex(UINT32_MAX);
-        }
-
-        PixelTileIndex indexOfTileSIMD(uint32_t crc, const PixelBlock& block, size_t start = 0, size_t lenTgt = SIZE_MAX) const {
-            const __m128i* n = reinterpret_cast<const __m128i*>(block.colors);
-            uint32_t len = lenTgt == SIZE_MAX ? uint32_t(rawPIXTiles.size()) : uint32_t(lenTgt);
-
-            const __m128i* ptr{ reinterpret_cast<const __m128i*>(rawPIXTiles.data() + start) };
-            const __m128i* ptrP{ reinterpret_cast<const __m128i*>(crcTiles.data() + start) };
-
-            __m128i crcBuf = _mm_set1_epi32(crc);
-            __m128i m128Buf{};
-            for (uint32_t k = start; k < len; k++) {
-                m128Buf = _mm_cmpeq_epi32(*ptrP++, crcBuf);
-                if (detail::getSimdORMask(m128Buf) != 0) {
-                    const __m128i* pptr = ptr;
-                    const __m128i* st = n;
-                    if (m128Buf.m128i_u32[0] == 0xFFFFFFFFU) {
-                        for (size_t i = 0, j = 0; i < 4; i++, j -= 16) {
-                            if ((
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++))
-                                ) != 0xFFFFFFFFU) {
-                                goto skip000;
-                            }
-                        }
-                        return PixelTileIndex(k, 0);
-                    }
-                skip000:
-                    if (m128Buf.m128i_u32[1] == 0xFFFFFFFFU) {
-                        pptr = ptr + 64;
-                        st = n;
-                        for (size_t i = 0, j = 0; i < 4; i++, j -= 16) {
-                            if ((
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++))
-                                ) != 0xFFFFFFFFU) {
-                                goto skip001;
-                            }
-                        }
-                        return PixelTileIndex(k, 1);
-                    }
-                skip001:
-
-                    if (m128Buf.m128i_u32[2] == 0xFFFFFFFFU) {
-                        pptr = ptr + 128;
-                        st = n;
-                        for (size_t i = 0, j = 0; i < 4; i++, j -= 16) {
-                            if ((
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++))
-                                ) != 0xFFFFFFFFU) {
-                                goto skip002;
-                            }
-                        }
-                        return PixelTileIndex(k, 2);
-                    }
-                skip002:
-
-                    if (m128Buf.m128i_u32[3] == 0xFFFFFFFFU) {
-                        pptr = ptr + 192;
-                        st = n;
-                        for (size_t i = 0, j = 0; i < 4; i++, j -= 16) {
-                            if ((
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++)) &
-                                detail::getSimdMask(_mm_cmpeq_epi32(*pptr++, *st++))
-                                ) != 0xFFFFFFFFU) {
-                                goto skip003;
-                            }
-                        }
-                        return PixelTileIndex(k, 3);
-                    }
-                }
-            skip003:
-                ptr += 256;
-            }
-            if (start > 1) {
-                return indexOfTileSIMD(crc, block, 1, start);
-            }
-            return PixelTileIndex(UINT32_MAX);
-        }
-
-        void pushNullTile() {
-            rawTiles.emplace_back();
-
-            auto& blocks = rawPIXTiles.emplace_back();
-            auto& crcs = crcTiles.emplace_back();
-            crcs.updateCrc(blocks.blocks[0], 0);
-            crcs[1] = crcs[0];
-            crcs[2] = crcs[0];
-            crcs[3] = crcs[0];
-        }
-
-        void pushFullTile(JCore::Color32 color) {
-            rawTiles.emplace_back();
-
-            auto& blocks = rawPIXTiles.emplace_back(color);
-            auto& crcs = crcTiles.emplace_back();
-
-            crcs.updateCrc(blocks.blocks[0], 0);
-            crcs[1] = crcs[0];
-            crcs[2] = crcs[0];
-            crcs[3] = crcs[0];
-        }
-
-        void doSave(const std::string& name, const OutputFormat& atlasFormat, bool premultiplyIcons, bool isDX9, char* path, char* dirName, JCore::ImageData img, std::vector<Projection*>& projections);
-        void write(const std::string& name, const OutputFormat& atlasFormat, const Stream& stream, std::vector<Projection*>& projections) const;
-
-        void buildAtlases(bool isDX9);
-        void saveAtlases(JCore::ImageData img, const OutputFormat& atlasFormat, const char* root) const;
-
-        int16_t addIcon(const fs::path& path);
-        PixelTileIndex ProjectionGroup::addTile(CRCBlock& crc, PixelTile tiles[4], PixelBlock blocks[4], size_t start);
-    };
-#pragma pack(pop)
-}
 
 namespace JCore {
-    template<>
-    inline constexpr int32_t EnumNames<Projections::TileDrawMode>::Count{ 2 };
-
-    template<>
-    inline const char** EnumNames<Projections::TileDrawMode>::getEnumNames() {
-        static const char* names[] =
-        {
-            "Default",
-            "With Glow",
-        };
-        return names;
-    }
-
     template<>
     inline constexpr int32_t EnumNames<Projections::RarityType>::Count{ 5 };
 
@@ -2641,33 +2651,65 @@ namespace JCore {
             "Master",
         };
         return names;
-    }
+    } 
+    
+    template<>
+    inline constexpr int32_t EnumNames<Projections::TargetMode>::Count{ Projections::TGT_COUNT };
 
     template<>
-    inline constexpr int32_t EnumNames<Projections::DropType>::Count{ Projections::DropType::DROP_COUNT };
-
-    template<>
-    inline const char** EnumNames<Projections::DropType>::getEnumNames() {
-        static const char* names[Projections::DropType::DROP_COUNT] =
+    inline const char** EnumNames<Projections::TargetMode>::getEnumNames() {
+        static const char* names[Projections::TGT_COUNT] =
         {
-            "Null",
-            "Enemy",
-            "Chest",
-            "Traveling Merchant",
+            "Last Valid",
+            "Next Valid",
+            "Specific Frame",
         };
         return names;
     }
 
     template<>
-    inline constexpr int32_t EnumNames<Projections::TileDrawLayer>::Count{ Projections::TileDrawLayer::TDRAW_COUNT };
+    inline constexpr int32_t EnumNames<Projections::PoolType>::Count{ Projections::PoolType::Pool_COUNT };
 
     template<>
-    inline const char** EnumNames<Projections::TileDrawLayer>::getEnumNames() {
-        static const char* names[Projections::TileDrawLayer::TDRAW_COUNT] =
+    inline const char** EnumNames<Projections::PoolType>::getEnumNames() {
+        static const char* names[Projections::PoolType::Pool_COUNT] =
         {
-            "Behind Walls",
-            "Behind Tiles",
-            "After Tiles",
+            "None",
+            "Trader",
+            "NPC Drop",
+            "Fishing Quest",
+            "Treasure Bag",
+        };
+        return names;
+    }
+
+    template<>
+    inline constexpr int32_t EnumNames<Projections::PType>::Count{ Projections::PType::PTY_Count };
+
+    template<>
+    inline const char** EnumNames<Projections::PType>::getEnumNames() {
+        static const char* names[Projections::PType::PTY_Count] =
+        {
+            "Projection",
+            "P-Material",
+            "P-Bundle",
+        };
+        return names;
+    }
+
+    template<>
+    inline constexpr int32_t EnumNames<Projections::RecipeType>::Count{ Projections::RecipeType::__RECIPE_TYPE_COUNT };
+
+    template<>
+    inline const char** EnumNames<Projections::RecipeType>::getEnumNames() {
+        static const char* names[EnumNames<Projections::RecipeType>::Count] =
+        {
+            "None",
+            "Vanilla Item",
+            "Modded Item",
+            "Projection",
+            "P-Material",
+            "P-Bundle",
         };
         return names;
     }
@@ -2852,24 +2894,25 @@ namespace JCore {
     inline const char** EnumNames<Projections::AnimationMode>::getEnumNames() {
         static const char* names[EnumNames<Projections::AnimationMode>::Count] =
         {
-            "None",
-            "Loop",
-            "Follow",
+            "Image Set",
+            "Loop (Video)",
+            "Loop (Audio)",
         };
         return names;
     }
 
     template<>
-    inline constexpr int32_t EnumNames<Projections::GenFlags>::Count{ 4 };
+    inline constexpr int32_t EnumNames<Projections::TexMode>::Count{ Projections::TexMode::__TEX_COUNT };
 
     template<>
-    inline const char** EnumNames<Projections::GenFlags>::getEnumNames() {
-        static const char* names[EnumNames<Projections::GenFlags>::Count] =
+    inline const char** EnumNames<Projections::TexMode>::getEnumNames() {
+        static const char* names[EnumNames<Projections::TexMode>::Count] =
         {
-            "No SIMD",
-            "Premultiply (Tiles)",
-            "Premultiply (Icons)",
-            "Is DX9",
+            "None",
+            "PNG",
+            "DDS",
+            "JTEX",
+            "RLE",
         };
         return names;
     }
@@ -2885,60 +2928,6 @@ namespace JCore {
             "Animation Mode",
             "Animation Speed",
             "Loop Start",
-        };
-        return names;
-    }
-
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::AtlasExportType>::Count{ 3 };
-
-    template<>
-    inline const char** EnumNames<Projections::AtlasExportType>::getEnumNames() {
-        static const char* names[EnumNames<Projections::AtlasExportType>::Count] =
-        {
-            "PNG",
-            "DDS",
-            "JTEX",
-        };
-        return names;
-    }
-
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::AtlasExportSize>::Count{ 2 };
-
-    template<>
-    inline const char** EnumNames<Projections::AtlasExportSize>::getEnumNames() {
-        static const char* names[EnumNames<Projections::AtlasExportSize>::Count] =
-        {
-            "RGBA32",
-            "RGBA4444",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::AtlasExportSize, 1>::Count{ 1 };
-
-    template<>
-    inline const char** EnumNames<Projections::AtlasExportSize, 1>::getEnumNames() {
-        static const char* names[EnumNames<Projections::AtlasExportSize, 1>::Count] =
-        {
-            "RGBA32",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::AnimSpeedType>::Count{ 2 };
-
-    template<>
-    inline const char** EnumNames<Projections::AnimSpeedType>::getEnumNames() {
-        static const char* names[EnumNames<Projections::AnimSpeedType>::Count] =
-        {
-            "Ticks Per Frame",
-            "Frame Duration",
         };
         return names;
     }
@@ -3727,51 +3716,51 @@ namespace JCore {
 
         switch (Projections::NPCID(index + Start))
         {
-            case NPCID::NPC_BUFFER_0:
-            case NPCID::NPC_BUFFER_1:
+        case NPCID::NPC_BUFFER_0:
+        case NPCID::NPC_BUFFER_1:
 
-            case NPCID::NPC_Devourer_Body:
-            case NPCID::NPC_Devourer_Tail:
-            case NPCID::NPC_Giant_Worm_Body:
-            case NPCID::NPC_Giant_Worm_Tail:
-            case NPCID::NPC_Eater_of_Worlds_Body:
-            case NPCID::NPC_Eater_of_Worlds_Tail:
-            case NPCID::NPC_Skeletron_Hand:
-            case NPCID::NPC_Bone_Serpent_Body:
-            case NPCID::NPC_Bone_Serpent_Tail:
-            case NPCID::NPC_Spike_Ball:
-            case NPCID::NPC_Wyvern_Legs:
-            case NPCID::NPC_Wyvern_Body_0:
-            case NPCID::NPC_Wyvern_Body_1:
-            case NPCID::NPC_Wyvern_Body_2:
-            case NPCID::NPC_Wyvern_Tail:
-            case NPCID::NPC_Digger_Body:
-            case NPCID::NPC_Digger_Tail:
-            case NPCID::NPC_World_Feeder_Body:
-            case NPCID::NPC_World_Feeder_Tail:
-            case NPCID::NPC_Wall_of_Flesh_Eye:
-            case NPCID::NPC_Leech_Body:
-            case NPCID::NPC_Leech_Tail:
-            case NPCID::NPC_Dune_Splicer_Body:
-            case NPCID::NPC_Dune_Splicer_Tail:
-            case NPCID::NPC_Tomb_Crawler_Body:
-            case NPCID::NPC_Tomb_Crawler_Tail:
-            case NPCID::NPC_Crawltipede_Body:
-            case NPCID::NPC_Crawltipede_Tail:
-            case NPCID::NPC_Milkyway_Weaver_Body:
-            case NPCID::NPC_Milkyway_Weaver_Tail:
-            case NPCID::NPC_Phantasm_Dragon_Body_1:
-            case NPCID::NPC_Phantasm_Dragon_Body_2:
-            case NPCID::NPC_Phantasm_Dragon_Body_3:
-            case NPCID::NPC_Phantasm_Dragon_Body_4:
-            case NPCID::NPC_Phantasm_Dragon_Tail:
-            case NPCID::NPC_Golem_Fist_Left:
-            case NPCID::NPC_Golem_Fist_Right:
-            case NPCID::NPC_Golem_Head:
-            case NPCID::NPC_Golem_Head_Free:
-            case NPCID::NPC_The_Destroyer_Body:
-            case NPCID::NPC_The_Destroyer_Tail:
-                return true;
+        case NPCID::NPC_Devourer_Body:
+        case NPCID::NPC_Devourer_Tail:
+        case NPCID::NPC_Giant_Worm_Body:
+        case NPCID::NPC_Giant_Worm_Tail:
+        case NPCID::NPC_Eater_of_Worlds_Body:
+        case NPCID::NPC_Eater_of_Worlds_Tail:
+        case NPCID::NPC_Skeletron_Hand:
+        case NPCID::NPC_Bone_Serpent_Body:
+        case NPCID::NPC_Bone_Serpent_Tail:
+        case NPCID::NPC_Spike_Ball:
+        case NPCID::NPC_Wyvern_Legs:
+        case NPCID::NPC_Wyvern_Body_0:
+        case NPCID::NPC_Wyvern_Body_1:
+        case NPCID::NPC_Wyvern_Body_2:
+        case NPCID::NPC_Wyvern_Tail:
+        case NPCID::NPC_Digger_Body:
+        case NPCID::NPC_Digger_Tail:
+        case NPCID::NPC_World_Feeder_Body:
+        case NPCID::NPC_World_Feeder_Tail:
+        case NPCID::NPC_Wall_of_Flesh_Eye:
+        case NPCID::NPC_Leech_Body:
+        case NPCID::NPC_Leech_Tail:
+        case NPCID::NPC_Dune_Splicer_Body:
+        case NPCID::NPC_Dune_Splicer_Tail:
+        case NPCID::NPC_Tomb_Crawler_Body:
+        case NPCID::NPC_Tomb_Crawler_Tail:
+        case NPCID::NPC_Crawltipede_Body:
+        case NPCID::NPC_Crawltipede_Tail:
+        case NPCID::NPC_Milkyway_Weaver_Body:
+        case NPCID::NPC_Milkyway_Weaver_Tail:
+        case NPCID::NPC_Phantasm_Dragon_Body_1:
+        case NPCID::NPC_Phantasm_Dragon_Body_2:
+        case NPCID::NPC_Phantasm_Dragon_Body_3:
+        case NPCID::NPC_Phantasm_Dragon_Body_4:
+        case NPCID::NPC_Phantasm_Dragon_Tail:
+        case NPCID::NPC_Golem_Fist_Left:
+        case NPCID::NPC_Golem_Fist_Right:
+        case NPCID::NPC_Golem_Head:
+        case NPCID::NPC_Golem_Head_Free:
+        case NPCID::NPC_The_Destroyer_Body:
+        case NPCID::NPC_The_Destroyer_Tail:
+            return true;
         }
 
         return isNoName(names[index]);
@@ -3783,13 +3772,10 @@ namespace JCore {
         auto names = getEnumNames();
         if (index < 0 || index >= Count || !names) { return true; }
         switch (Projections::NPCID(index + Start)) {
-            case NPCID::NPC_BUFFER_0:
-            case NPCID::NPC_BUFFER_1:
-                return true;
+        case NPCID::NPC_BUFFER_0:
+        case NPCID::NPC_BUFFER_1:
+            return true;
         }
         return isNoName(names[index]);
     }
-
-
-
 }

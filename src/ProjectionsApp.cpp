@@ -2,10 +2,10 @@
 
 #include <J-Core/ThreadManager.h>
 #include <J-Core/Math/Math.h>
-#include <J-Core/Util/StringHelpers.h>
+#include <J-Core/Util/StringUtils.h>
 
 #include <GLFW/glfw3.h>
-#include <ImageUtils/ImageUtilsGui.h>
+#include <ProjectionSimulator.h>
 #include <ProjectionsGui.h>
 
 using namespace JCore;
@@ -23,7 +23,7 @@ namespace Projections {
         _panels.clear();
 
         _panels.emplace_back(new ProjectionGenPanel())->init();
-        _panels.emplace_back(new ImageUtilPanel())->init();
+        //_panels.emplace_back(new ProjectionSimPanel())->init();
     }
 
     void ProjectionsApp::doGui() {
@@ -34,14 +34,14 @@ namespace Projections {
         window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
         window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
     
-        float headerY = ImGui::GetFrameHeight() * 2.2f;
+        float headerY = _panels.size()  > 1 ? ImGui::GetFrameHeight() * 2.2f : 0.0f;
 
         ImVec2 pos;
         ImVec2 size;
 
         ImGui::BeginDisabled(shouldBeDisabled);
         //Header
-        {
+        if(_panels.size() > 1){
             pos = viewport->Pos;
 
             size = viewport->Size;
@@ -92,6 +92,8 @@ namespace Projections {
         ImGui::PopStyleVar(2);
 
         if (_panels.size()) {
+            _currentPanel = Math::min(_currentPanel, _panels.size() - 1);
+
             auto panel = _panels[_currentPanel];
             ImGui::BeginChild(panel->getTitleC_Str());
             panel->draw();

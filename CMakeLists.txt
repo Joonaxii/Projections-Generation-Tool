@@ -12,7 +12,12 @@ IF (WIN32)
 	add_compile_definitions(NOMINMAX)
 ENDIF(WIN32)
 
+set(RESOURCE "${CMAKE_SOURCE_DIR}/res/Resource.rc" "${CMAKE_SOURCE_DIR}/res/Icon.ico")
+
 set(PROJ_SRC
+	"include/ProjectionSimulator.h"
+	"src/ProjectionSimulator.cpp"
+	
 	"include/ProjectionsApp.h"
 	"src/ProjectionsApp.cpp"
 	
@@ -21,23 +26,13 @@ set(PROJ_SRC
 	
 	"include/ProjectionGen.h"
 	"src/ProjectionGen.cpp"
-	
 	"src/main.cpp"
 )
 source_group("Projections" FILES ${PROJ_SRC})
 list(APPEND PROJECTIONS_SOURCES ${PROJ_SRC})	
 
-set(PROJ_SRC
-	"include/ImageUtils/ImageUtilsTypes.h"
-	"src/ImageUtils/ImageUtilsTypes.cpp"
-	
-	"include/ImageUtils/ImageUtilsGui.h"
-	"src/ImageUtils/ImageUtilsGui.cpp"
-)
-source_group("Projections/Image Utils" FILES ${PROJ_SRC})
-list(APPEND PROJECTIONS_SOURCES ${PROJ_SRC})	
 
-add_executable(Projections-GUI ${PROJECTIONS_SOURCES})
+add_executable(Projections-GUI ${RESOURCE} ${PROJECTIONS_SOURCES})
 target_link_libraries(Projections-GUI J-Core nlohmann_json)
 
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Projections-GUI)
