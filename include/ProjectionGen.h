@@ -144,6 +144,9 @@ namespace Projections {
         RARITY_Advanced,
         RARITY_Expert,
         RARITY_Master,
+
+
+        RARITY_COUNT,
     };
 
     enum PMaterialFlags : uint8_t {
@@ -162,72 +165,76 @@ namespace Projections {
         PFrm_None = 0x00,
     };
 
-    enum NPCID : int32_t {
-        NPC_Big_Hornet_Stingy = -65,
-        NPC_Little_Hornet_Stingy = -64,
-        NPC_Big_Hornet_Spikey = -63,
-        NPC_Little_Hornet_Spikey = -62,
-        NPC_Big_Hornet_Leafy = -61,
-        NPC_Little_Hornet_Leafy = -60,
-        NPC_Big_Hornet_Honey = -59,
-        NPC_Little_Hornet_Honey = -58,
-        NPC_Big_Hornet_Fatty = -57,
-        NPC_Little_Hornet_Fatty = -56,
-        NPC_Big_Rain_Zombie = -55,
-        NPC_Small_Rain_Zombie = -54,
-        NPC_Big_Pantless_Skeleton = -53,
-        NPC_Small_Pantless_Skeleton = -52,
-        NPC_Big_Misassembled_Skeleton = -51,
-        NPC_Small_Misassembled_Skeleton = -50,
-        NPC_Big_Headache_Skeleton = -49,
-        NPC_Small_Headache_Skeleton = -48,
-        NPC_Big_Skeleton = -47,
-        NPC_Small_Skeleton = -46,
-        NPC_Big_Female_Zombie = -45,
-        NPC_Small_Female_Zombie = -44,
-        NPC_Demon_Eye_2 = -43,
-        NPC_Purple_Eye_24 = -2,
-        NPC_Green_Eye_2 = -41,
-        NPC_Dialated_Eye_2 = -40,
-        NPC_Sleepy_Eye_2 = -39,
-        NPC_Cataract_Eye_2 = -38,
-        NPC_Big_Twiggy_Zombie = -37,
-        NPC_Small_Twiggy_Zombie = -36,
-        NPC_Big_Swamp_Zombie = -35,
-        NPC_Small_Swamp_Zombie = -34,
-        NPC_Big_Slimed_Zombie = -33,
-        NPC_Small_Slimed_Zombie = -32,
-        NPC_Big_Pincushion_Zombie = -31,
-        NPC_Small_Pincushion_Zombie = -30,
-        NPC_Big_Bald_Zombie = -29,
-        NPC_Small_Bald_Zombie = -28,
-        NPC_Big_Zombie = -27,
-        NPC_Small_Zombie = -26,
-        NPC_Big_Crimslime = -25,
-        NPC_Little_Crimslime = -24,
-        NPC_Big_Crimera = -23,
-        NPC_Little_Crimera = -22,
-        NPC_Giant_Moss_Hornet = -21,
-        NPC_Big_Moss_Hornet = -20,
-        NPC_Little_Moss_Hornet = -19,
-        NPC_Tiny_Moss_Hornet = -18,
-        NPC_Big_Stinger = -17,
-        NPC_Little_Stinger = -16,
-        NPC_Heavy_Skeleton = -15,
-        NPC_Big_Boned = -14,
-        NPC_Short_Bones = -13,
-        NPC_Big_Eater = -12,
-        NPC_Little_Eater = -11,
-        NPC_Jungle_Slime = -10,
-        NPC_Yellow_Slime = -9,
-        NPC_Red_Slime = -8,
-        NPC_Purple_Slime = -7,
-        NPC_Black_Slime = -6,
-        NPC_Baby_Slime = -5,
-        NPC_Pinky = -4,
-        NPC_Green_Slime = -3,
-        NPC_Slimer2 = -2,
-        NPC_Slimeling = -1,
+
+    /// <summary>
+    ///  LAST ID IS -65, REMEMBER TO OFFSET!!!!
+    /// </summary>
+    enum NPCID : uint32_t {
+        NPC_Big_Hornet_Stingy,
+        NPC_Little_Hornet_Stingy,
+        NPC_Big_Hornet_Spikey,
+        NPC_Little_Hornet_Spikey,
+        NPC_Big_Hornet_Leafy,
+        NPC_Little_Hornet_Leafy,
+        NPC_Big_Hornet_Honey,
+        NPC_Little_Hornet_Honey,
+        NPC_Big_Hornet_Fatty,
+        NPC_Little_Hornet_Fatty,
+        NPC_Big_Rain_Zombie,
+        NPC_Small_Rain_Zombie,
+        NPC_Big_Pantless_Skeleton,
+        NPC_Small_Pantless_Skeleton,
+        NPC_Big_Misassembled_Skeleton,
+        NPC_Small_Misassembled_Skeleton,
+        NPC_Big_Headache_Skeleton,
+        NPC_Small_Headache_Skeleton,
+        NPC_Big_Skeleton,
+        NPC_Small_Skeleton,
+        NPC_Big_Female_Zombie,
+        NPC_Small_Female_Zombie,
+        NPC_Demon_Eye_2,
+        NPC_Purple_Eye_24,
+        NPC_Green_Eye_2,
+        NPC_Dialated_Eye_2,
+        NPC_Sleepy_Eye_2,
+        NPC_Cataract_Eye_2,
+        NPC_Big_Twiggy_Zombie,
+        NPC_Small_Twiggy_Zombie,
+        NPC_Big_Swamp_Zombie,
+        NPC_Small_Swamp_Zombie,
+        NPC_Big_Slimed_Zombie,
+        NPC_Small_Slimed_Zombie,
+        NPC_Big_Pincushion_Zombie,
+        NPC_Small_Pincushion_Zombie,
+        NPC_Big_Bald_Zombie,
+        NPC_Small_Bald_Zombie,
+        NPC_Big_Zombie,
+        NPC_Small_Zombie,
+        NPC_Big_Crimslime,
+        NPC_Little_Crimslime,
+        NPC_Big_Crimera,
+        NPC_Little_Crimera,
+        NPC_Giant_Moss_Hornet,
+        NPC_Big_Moss_Hornet,
+        NPC_Little_Moss_Hornet,
+        NPC_Tiny_Moss_Hornet,
+        NPC_Big_Stinger,
+        NPC_Little_Stinger,
+        NPC_Heavy_Skeleton,
+        NPC_Big_Boned,
+        NPC_Short_Bones,
+        NPC_Big_Eater,
+        NPC_Little_Eater,
+        NPC_Jungle_Slime,
+        NPC_Yellow_Slime,
+        NPC_Red_Slime,
+        NPC_Purple_Slime,
+        NPC_Black_Slime,
+        NPC_Baby_Slime,
+        NPC_Pinky,
+        NPC_Green_Slime,
+        NPC_Slimer2,
+        NPC_Slimeling,
         NPC_Any,
         NPC_Blue_Slime,
         NPC_Demon_Eye,
@@ -914,9 +921,11 @@ namespace Projections {
         NPC_Clumsy_Balloon_Slime,
         NPC_Mystic_Frog,
 
-        NPC_MAX,
-        NPC_MIN = NPC_Big_Hornet_Stingy,
-        NPC_Count = NPC_MAX - NPC_MIN,
+        NPC_Count,
+        NPC_OFFSET = 65,
+        NPC_NET_START = 0,
+        NPC_MAIN_START = NPC_Any,
+        NPC_MAIN_COUNT = NPC_Count - NPC_MAIN_START,
     };
 
     enum BiomeFlags : uint64_t {
@@ -1067,14 +1076,6 @@ namespace Projections {
         stream.write(str.c_str(), len, false);
     }
 
-    enum VariationApplyMode : uint8_t {
-        VAR_APPLY_None = 0x00,
-        VAR_APPLY_Name = 0x01,
-        VAR_APPLY_AnimMode = 0x02,
-        VAR_APPLY_AnimSpeed = 0x04,
-        VAR_APPLY_LoopStart = 0x08,
-    };
-
     inline uint32_t calculateNameHash(std::string_view name) {
         if (name.length() < 1) {
             return 0;
@@ -1138,7 +1139,7 @@ namespace Projections {
                 int32_t sCount = count >> 5;
                 uint64_t mask = 0;
                 for (int32_t i = 0, j = 0; i < sCount; i++, j += 32) {
-                    mask  = uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key)));
+                    mask = uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key)));
                     mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 16;
                     mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 32;
                     mask |= uint64_t(_mm_movemask_epi8(_mm_cmpeq_epi32(*simdPtr++, key))) << 48;
@@ -1186,7 +1187,7 @@ namespace Projections {
                     return index;
                 }
             }
- 
+
             index = indexOf(color);
             if (index < 0 && count < SIZE) {
                 index = count++;
@@ -2634,321 +2635,152 @@ namespace Projections {
             masks.insert(masks.begin() + i, copy);
         }
     };
-        }
+}
 
 namespace JCore {
-    template<>
-    inline constexpr int32_t EnumNames<Projections::RarityType>::Count{ 5 };
+    DEFINE_ENUM(Projections::RarityType, false, 0, Projections::RarityType::RARITY_COUNT,
+        "Basic",
+        "Intermediate",
+        "Advanced",
+        "Expert",
+        "Master");
 
-    template<>
-    inline const char** EnumNames<Projections::RarityType>::getEnumNames() {
-        static const char* names[] =
-        {
-            "Basic",
-            "Intermediate",
-            "Advanced",
-            "Expert",
-            "Master",
-        };
-        return names;
-    } 
-    
-    template<>
-    inline constexpr int32_t EnumNames<Projections::TargetMode>::Count{ Projections::TGT_COUNT };
+    DEFINE_ENUM(Projections::TargetMode, false, 0, Projections::TargetMode::TGT_COUNT,
+        "Last Valid",
+        "Next Valid",
+        "Specific Frame");
 
-    template<>
-    inline const char** EnumNames<Projections::TargetMode>::getEnumNames() {
-        static const char* names[Projections::TGT_COUNT] =
-        {
-            "Last Valid",
-            "Next Valid",
-            "Specific Frame",
-        };
-        return names;
-    }
+    DEFINE_ENUM(Projections::PoolType, false, 0, Projections::PoolType::Pool_COUNT,
+        "None",
+        "Trader",
+        "NPC Drop",
+        "Fishing Quest",
+        "Treasure Bag");
 
-    template<>
-    inline constexpr int32_t EnumNames<Projections::PoolType>::Count{ Projections::PoolType::Pool_COUNT };
+    DEFINE_ENUM(Projections::PType, false, 0, Projections::PType::PTY_Count,
+        "Projection",
+        "P-Material",
+        "P-Bundle");
 
-    template<>
-    inline const char** EnumNames<Projections::PoolType>::getEnumNames() {
-        static const char* names[Projections::PoolType::Pool_COUNT] =
-        {
-            "None",
-            "Trader",
-            "NPC Drop",
-            "Fishing Quest",
-            "Treasure Bag",
-        };
-        return names;
-    }
+    DEFINE_ENUM(Projections::RecipeType, false, 0, Projections::RecipeType::__RECIPE_TYPE_COUNT,
+        "None",
+        "Vanilla Item",
+        "Modded Item",
+        "Projection",
+        "P-Material",
+        "P-Bundle");
 
-    template<>
-    inline constexpr int32_t EnumNames<Projections::PType>::Count{ Projections::PType::PTY_Count };
+    DEFINE_ENUM_ID(Projections::BiomeFlags, 0, true, 0, 5,
+        "Sky",
+        "Surface",
+        "Underground",
+        "Caverns",
+        "Underworld");
 
-    template<>
-    inline const char** EnumNames<Projections::PType>::getEnumNames() {
-        static const char* names[Projections::PType::PTY_Count] =
-        {
-            "Projection",
-            "P-Material",
-            "P-Bundle",
-        };
-        return names;
-    }
+    DEFINE_ENUM_ID(Projections::BiomeFlags, 1, true, 5, 14,
+        "Forest",
+        "Desert",
+        "Ocean",
+        "Snow",
+        "Jungle",
+        "Meteorite",
+        "Mushroom",
+        "Dungeon",
+        "Temple",
+        "Aether",
+        "Bee Hive",
+        "Granite",
+        "Marble",
+        "Graveyard");
 
-    template<>
-    inline constexpr int32_t EnumNames<Projections::RecipeType>::Count{ Projections::RecipeType::__RECIPE_TYPE_COUNT };
+    DEFINE_ENUM_ID(Projections::BiomeFlags, 2, true, 19, 9,
+        "Old Ones Army",
+        "Town",
+        "Water Candle",
+        "Peace Candle",
+        "Shadow Candle",
+        "Solar Pillar",
+        "Nebula Pillar",
+        "Vortex Pillar",
+        "Stardust Pillar");
 
-    template<>
-    inline const char** EnumNames<Projections::RecipeType>::getEnumNames() {
-        static const char* names[EnumNames<Projections::RecipeType>::Count] =
-        {
-            "None",
-            "Vanilla Item",
-            "Modded Item",
-            "Projection",
-            "P-Material",
-            "P-Bundle",
-        };
-        return names;
-    }
+    DEFINE_ENUM_ID(Projections::BiomeFlags, 3, true, 28, 4,
+        "Purity",
+        "Corruption",
+        "Crimson",
+        "Hallow");
 
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 0>::Count{ 5 };
+    DEFINE_ENUM_ID(Projections::BiomeFlags, 4, true, 32, 4,
+        "Elevation",
+        "Biome",
+        "Effect",
+        "Purity/Evil");
 
-    template<>
-    inline const char** EnumNames<Projections::BiomeFlags, 0>::getEnumNames() {
-        static const char* names[Count] =
-        {
-            "Sky",
-            "Surface",
-            "Underground",
-            "Caverns",
-            "Underworld",
-        };
-        return names;
-    }
+    DEFINE_ENUM_ID(Projections::WorldConditions, 0, true, 0, 15,
+        "Is Hardmode",
+        "Is Expert",
+        "Is Master",
+        "Is Day",
+        "Is Night",
+        "Is Blood Moon",
+        "Is Eclipse",
+        "Is Pumpkin Moon",
+        "Is Frost Moon",
+        "Is Halloween",
+        "Is Christmas",
+        "Is Sandstorm",
+        "Is Raining",
+        "Is Storming",
+        "Is Crimson");
 
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 1>::Start{ 5 };
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 1>::Count{ 14 };
+    DEFINE_ENUM_ID(Projections::WorldConditions, 1, true, 15, 33,
+        "King Slime",
+        "Eyes of Cthulhu",
+        "Eater of Worlds",
+        "Brain of Cthulhu",
+        "Queen Bee",
+        "Skeletron",
+        "Deerclops",
+        "Wall of Flesh",
+        "Queen Slime",
+        "The Twins",
+        "The Destroyer",
+        "Skeletron Prime",
+        "Plantera",
+        "Golem",
+        "Duke Fishron",
+        "Empress of Light",
+        "Lunatic Cultist",
+        "Moon Lord",
+        "Mourning Wood",
+        "Pumpking",
+        "Everscream",
+        "Santa-NK1",
+        "Ice Queen",
+        "Solar Pillar",
+        "Nebula Pillar",
+        "Vortex Pillar",
+        "Stardust Pillar",
+        "Goblin Army",
+        "Pirates",
+        "Frost Legion",
+        "Martians",
+        "Pumpkin Moon",
+        "Frost Moon");
 
-    template<>
-    inline const char** EnumNames<Projections::BiomeFlags, 1>::getEnumNames() {
-        static const char* names[Count] =
-        {
-            "Forest",
-            "Desert",
-            "Ocean",
-            "Snow",
-            "Jungle",
-            "Meteorite",
-            "Mushroom",
-            "Dungeon",
-            "Temple",
-            "Aether",
-            "Bee Hive",
-            "Granite",
-            "Marble",
-            "Graveyard",
-        };
-        return names;
-    }
+    DEFINE_ENUM(Projections::AnimationMode, false, 0, Projections::AnimationMode::ANIM_COUNT,
+        "Image Set",
+        "Loop (Video)",
+        "Loop (Audio)");
 
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 2>::Start{ 19 };
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 2>::Count{ 9 };
+    DEFINE_ENUM(Projections::TexMode, false, 0, Projections::TexMode::__TEX_COUNT,
+        "None",
+        "PNG",
+        "DDS",
+        "JTEX",
+        "RLE");
 
-    template<>
-    inline const char** EnumNames<Projections::BiomeFlags, 2>::getEnumNames() {
-        static const char* names[Count] =
-        {
-            "Old Ones Army",
-            "Town",
-            "Water Candle",
-            "Peace Candle",
-            "Shadow Candle",
-            "Solar Pillar",
-            "Nebula Pillar",
-            "Vortex Pillar",
-            "Stardust Pillar",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 3>::Start{ 28 };
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 3>::Count{ 4 };
-
-    template<>
-    inline const char** EnumNames<Projections::BiomeFlags, 3>::getEnumNames() {
-        static const char* names[Count] =
-        {
-            "Purity",
-            "Corruption",
-            "Crimson",
-            "Hallow",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 4>::Start{ 32 };
-    template<>
-    inline constexpr int32_t EnumNames<Projections::BiomeFlags, 4>::Count{ 4 };
-
-    template<>
-    inline const char** EnumNames<Projections::BiomeFlags, 4>::getEnumNames() {
-        static const char* names[Count] =
-        {
-            "Elevation",
-            "Biome",
-            "Effect",
-            "Purity/Evil",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::WorldConditions>::Count{ 15 };
-
-    template<>
-    inline const char** EnumNames<Projections::WorldConditions>::getEnumNames() {
-        static const char* names[EnumNames<Projections::WorldConditions>::Count] =
-        {
-            "Is Hardmode",
-            "Is Expert",
-            "Is Master",
-            "Is Day",
-            "Is Night",
-            "Is Blood Moon",
-            "Is Eclipse",
-            "Is Pumpkin Moon",
-            "Is Frost Moon",
-            "Is Halloween",
-            "Is Christmas",
-            "Is Sandstorm",
-            "Is Raining",
-            "Is Storming",
-            "Is Crimson",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::WorldConditions, 1>::Count{ 33 };
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::WorldConditions, 1>::Start{ 15 };
-
-    template<>
-    inline const char** EnumNames<Projections::WorldConditions, 1>::getEnumNames() {
-        static const char* names[EnumNames<Projections::WorldConditions, 1>::Count] =
-        {
-            "King Slime",
-            "Eyes of Cthulhu",
-            "Eater of Worlds",
-            "Brain of Cthulhu",
-            "Queen Bee",
-            "Skeletron",
-            "Deerclops",
-            "Wall of Flesh",
-            "Queen Slime",
-            "The Twins",
-            "The Destroyer",
-            "Skeletron Prime",
-            "Plantera",
-            "Golem",
-            "Duke Fishron",
-            "Empress of Light",
-            "Lunatic Cultist",
-            "Moon Lord",
-            "Mourning Wood",
-            "Pumpking",
-            "Everscream",
-            "Santa-NK1",
-            "Ice Queen",
-            "Solar Pillar",
-            "Nebula Pillar",
-            "Vortex Pillar",
-            "Stardust Pillar",
-            "Goblin Army",
-            "Pirates",
-            "Frost Legion",
-            "Martians",
-            "Pumpkin Moon",
-            "Frost Moon",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::AnimationMode>::Count{ Projections::AnimationMode::ANIM_COUNT };
-
-    template<>
-    inline const char** EnumNames<Projections::AnimationMode>::getEnumNames() {
-        static const char* names[EnumNames<Projections::AnimationMode>::Count] =
-        {
-            "Image Set",
-            "Loop (Video)",
-            "Loop (Audio)",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::TexMode>::Count{ Projections::TexMode::__TEX_COUNT };
-
-    template<>
-    inline const char** EnumNames<Projections::TexMode>::getEnumNames() {
-        static const char* names[EnumNames<Projections::TexMode>::Count] =
-        {
-            "None",
-            "PNG",
-            "DDS",
-            "JTEX",
-            "RLE",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::VariationApplyMode>::Count{ 4 };
-
-    template<>
-    inline const char** EnumNames<Projections::VariationApplyMode>::getEnumNames() {
-        static const char* names[EnumNames<Projections::VariationApplyMode>::Count] =
-        {
-            "Name",
-            "Animation Mode",
-            "Animation Speed",
-            "Loop Start",
-        };
-        return names;
-    }
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::NPCID, 0>::Count{ Projections::NPCID::NPC_Count };
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::NPCID, 0>::Start{ Projections::NPCID::NPC_MIN };
-
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::NPCID, 1>::Count{ Projections::NPCID::NPC_Count };
-
-    template<>
-    inline constexpr int32_t EnumNames<Projections::NPCID, 1>::Start{ Projections::NPCID::NPC_MIN };
-
-    template<>
-    inline const char** EnumNames<Projections::NPCID, 0>::getEnumNames() {
-        static const char* names[EnumNames<Projections::NPCID, 0>::Count] =
-        {
+    DEFINE_ENUM_ID(Projections::NPCID, 0, false, Projections::NPCID::NPC_NET_START, Projections::NPCID::NPC_Count,
         "Big Hornet Stingy",
         "Little Hornet Stingy",
         "Big Hornet Spikey",
@@ -3090,7 +2922,7 @@ namespace JCore {
         "Goblin Scout",
         "Bird",
         "Pixie",
-        "BUFFER 0",
+        NULL_NAME,
         "Armored Skeleton",
         "Mummy",
         "Dark Mummy",
@@ -3411,8 +3243,8 @@ namespace JCore {
         "Martian Saucer Cannon",
         "Martian Saucer Core",
         "Moon Lord",
-        "Moon Lords Hand",
-        "Moon Lords Core",
+        "Moon Lord's Hand",
+        "Moon Lord's Core",
         "Martian Probe",
         "Moon Lord Free Eye",
         "Moon Leech Clot",
@@ -3422,7 +3254,7 @@ namespace JCore {
         "Star Cell",
         "Star Cell Mini",
         "Flow Invader",
-        "BUFFER 1",
+        NULL_NAME,
         "Twinkle Popper",
         "Twinkle",
         "Stargazer",
@@ -3698,84 +3530,692 @@ namespace JCore {
         "Squire Slime",
         "Old Shaking Chest",
         "Clumsy Balloon Slime",
-        "Mystic Frog",
-        };
-        return names;
-    }
+        "Mystic Frog");
 
-    template<>
-    inline const char** EnumNames<Projections::NPCID, 1>::getEnumNames() {
-        return  EnumNames<Projections::NPCID, 0>::getEnumNames();
-    }
-
-    template<>
-    inline bool EnumNames<Projections::NPCID, 0>::noDraw(int32_t index) {
-        using namespace Projections;
-        auto names = getEnumNames();
-        if (index < 0 || index >= Count || !names || index < -Start) { return true; }
-
-        switch (Projections::NPCID(index + Start))
-        {
-        case NPCID::NPC_BUFFER_0:
-        case NPCID::NPC_BUFFER_1:
-
-        case NPCID::NPC_Devourer_Body:
-        case NPCID::NPC_Devourer_Tail:
-        case NPCID::NPC_Giant_Worm_Body:
-        case NPCID::NPC_Giant_Worm_Tail:
-        case NPCID::NPC_Eater_of_Worlds_Body:
-        case NPCID::NPC_Eater_of_Worlds_Tail:
-        case NPCID::NPC_Skeletron_Hand:
-        case NPCID::NPC_Bone_Serpent_Body:
-        case NPCID::NPC_Bone_Serpent_Tail:
-        case NPCID::NPC_Spike_Ball:
-        case NPCID::NPC_Wyvern_Legs:
-        case NPCID::NPC_Wyvern_Body_0:
-        case NPCID::NPC_Wyvern_Body_1:
-        case NPCID::NPC_Wyvern_Body_2:
-        case NPCID::NPC_Wyvern_Tail:
-        case NPCID::NPC_Digger_Body:
-        case NPCID::NPC_Digger_Tail:
-        case NPCID::NPC_World_Feeder_Body:
-        case NPCID::NPC_World_Feeder_Tail:
-        case NPCID::NPC_Wall_of_Flesh_Eye:
-        case NPCID::NPC_Leech_Body:
-        case NPCID::NPC_Leech_Tail:
-        case NPCID::NPC_Dune_Splicer_Body:
-        case NPCID::NPC_Dune_Splicer_Tail:
-        case NPCID::NPC_Tomb_Crawler_Body:
-        case NPCID::NPC_Tomb_Crawler_Tail:
-        case NPCID::NPC_Crawltipede_Body:
-        case NPCID::NPC_Crawltipede_Tail:
-        case NPCID::NPC_Milkyway_Weaver_Body:
-        case NPCID::NPC_Milkyway_Weaver_Tail:
-        case NPCID::NPC_Phantasm_Dragon_Body_1:
-        case NPCID::NPC_Phantasm_Dragon_Body_2:
-        case NPCID::NPC_Phantasm_Dragon_Body_3:
-        case NPCID::NPC_Phantasm_Dragon_Body_4:
-        case NPCID::NPC_Phantasm_Dragon_Tail:
-        case NPCID::NPC_Golem_Fist_Left:
-        case NPCID::NPC_Golem_Fist_Right:
-        case NPCID::NPC_Golem_Head:
-        case NPCID::NPC_Golem_Head_Free:
-        case NPCID::NPC_The_Destroyer_Body:
-        case NPCID::NPC_The_Destroyer_Tail:
-            return true;
-        }
-
-        return isNoName(names[index]);
-    }
-
-    template<>
-    inline bool EnumNames<Projections::NPCID, 1>::noDraw(int32_t index) {
-        using namespace Projections;
-        auto names = getEnumNames();
-        if (index < 0 || index >= Count || !names) { return true; }
-        switch (Projections::NPCID(index + Start)) {
-        case NPCID::NPC_BUFFER_0:
-        case NPCID::NPC_BUFFER_1:
-            return true;
-        }
-        return isNoName(names[index]);
-    }
+    DEFINE_ENUM_ID(Projections::NPCID, 1, false, Projections::NPCID::NPC_MAIN_START, Projections::NPCID::NPC_MAIN_COUNT,
+        "Any",
+        "Blue Slime",
+        "Demon Eye",
+        "Zombie",
+        "Eye of Cthulhu",
+        "Servant of Cthulhu",
+        "Eater of Souls",
+        "Devourer",
+        NULL_NAME,
+        NULL_NAME,
+        "Giant Worm",
+        NULL_NAME,
+        NULL_NAME,
+        "Eater of Worlds",
+        NULL_NAME,
+        NULL_NAME,
+        "Mother Slime",
+        "Merchant",
+        "Nurse",
+        "Arms Dealer",
+        "Dryad",
+        "Skeleton",
+        "Guide",
+        "Meteor Head",
+        "Fire Imp",
+        "Burning Sphere",
+        "Goblin Peon",
+        "Goblin Thief",
+        "Goblin Warrior",
+        "Goblin Sorcerer",
+        "Chaos Ball",
+        "Angry Bones",
+        "Dark Caster",
+        "Water Sphere",
+        "Cursed Skull",
+        "Skeletron",
+        NULL_NAME,
+        "Old Man",
+        "Demolitionist",
+        "Bone Serpent",
+        NULL_NAME,
+        NULL_NAME,
+        "Hornet",
+        "Man Eater",
+        "Undead Miner",
+        "Tim",
+        "Bunny",
+        "Corrupt Bunny",
+        "Harpy",
+        "Cave Bat",
+        "King Slime",
+        "Jungle Bat",
+        "Doctor Bones",
+        "The Groom",
+        "Clothier",
+        "Goldfish",
+        "Snatcher",
+        "Corrupt Goldfish",
+        "Piranha",
+        "Lava Slime",
+        "Hellbat",
+        "Vulture",
+        "Demon",
+        "Blue Jellyfish",
+        "Pink Jellyfish",
+        "Shark",
+        "Voodoo Demon",
+        "Crab",
+        "Dungeon Guardian",
+        "Antlion",
+        "Spike Ball",
+        "Dungeon Slime",
+        "Blazing Wheel",
+        "Goblin Scout",
+        "Bird",
+        "Pixie",
+        NULL_NAME,
+        "Armored Skeleton",
+        "Mummy",
+        "Dark Mummy",
+        "Light Mummy",
+        "Corrupt Slime",
+        "Wraith",
+        "Cursed Hammer",
+        "Enchanted Sword",
+        "Mimic",
+        "Unicorn",
+        "Wyvern",
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        "Giant Bat",
+        "Corruptor",
+        "Digger",
+        NULL_NAME,
+        NULL_NAME,
+        "World Feeder",
+        NULL_NAME,
+        NULL_NAME,
+        "Clinger",
+        "Angler Fish",
+        "Green Jellyfish",
+        "Werewolf",
+        "Bound Goblin",
+        "Bound Wizard",
+        "Goblin Tinkerer",
+        "Wizard",
+        "Clown",
+        "Skeleton Archer",
+        "Goblin Archer",
+        "Vile Spit",
+        "Wall of Flesh",
+        NULL_NAME,
+        "The Hungry",
+        "The Hungry II",
+        "Leech",
+        "Leech Body",
+        "Leech Tail",
+        "Chaos Elemental",
+        "Slimer",
+        "Gastropod",
+        "Bound Mechanic",
+        "Mechanic",
+        "Retinazer",
+        "Spazmatism",
+        "Skeletron Prime",
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        "Zombie Bald",
+        "Wandering Eye",
+        "The Destroyer",
+        NULL_NAME,
+        NULL_NAME,
+        "Illuminant Bat",
+        "Illuminant Slime",
+        "Probe",
+        "Possessed Armor",
+        "Toxic Sludge",
+        "Santa Claus",
+        "Snowman Gangsta",
+        "Mister Stabby",
+        "Snow Balla",
+        "ER 1",
+        "Ice Slime",
+        "Penguin",
+        "Penguin Black",
+        "Ice Bat",
+        "Lava Bat",
+        "Giant Flying Fox",
+        "Giant Tortoise",
+        "Ice Tortoise",
+        "Wolf",
+        "Red Devil",
+        "Arapaima",
+        "Vampire Bat",
+        "Vampire",
+        "Truffle",
+        "Zombie Eskimo",
+        "Frankenstein",
+        "Black Recluse",
+        "Wall Creeper",
+        "Wall Creeper Wall",
+        "Swamp Thing",
+        "Undead Viking",
+        "Corrupt Penguin",
+        "Ice Elemental",
+        "Pigron Corrupt",
+        "Pigron Hallow",
+        "Rune Wizard",
+        "Crimera",
+        "Herpling",
+        "Angry Trapper",
+        "Moss Hornet",
+        "Derpling",
+        "Steampunker",
+        "Crimson Axe",
+        "Pigron Crimson",
+        "Face Monster",
+        "Floaty Gross",
+        "Crimslime",
+        "Spiked Ice Slime",
+        "Snow Flinx",
+        "Pincushion Zombie",
+        "Slimed Zombie",
+        "Swamp Zombie",
+        "Twiggy Zombie",
+        "Cataract Eye",
+        "Sleepy Eye",
+        "Dialated Eye",
+        "Green Eye",
+        "Purple Eye",
+        "Lost Girl",
+        "Nymph",
+        "Armored Viking",
+        "Lihzahrd",
+        "Lihzahrd Crawler",
+        "Female Zombie",
+        "Headache Skeleton",
+        "Misassembled Skeleton",
+        "Pantless Skeleton",
+        "Spiked Jungle Slime",
+        "Moth",
+        "Icy Merman",
+        "Dye Trader",
+        "Party Girl",
+        "Cyborg",
+        "Bee",
+        "Bee Small",
+        "Pirate Deckhand",
+        "Pirate Corsair",
+        "Pirate Deadeye",
+        "Pirate Crossbower",
+        "Pirate Captain",
+        "Cochineal Beetle",
+        "Cyan Beetle",
+        "Lac Beetle",
+        "Sea Snail",
+        "Squid",
+        "Queen Bee",
+        "Raincoat Zombie",
+        "Flying Fish",
+        "Umbrella Slime",
+        "Flying Snake",
+        "Painter",
+        "Witch Doctor",
+        "Pirate",
+        "Goldfish Walker",
+        "Hornet Fatty",
+        "Hornet Honey",
+        "Hornet Leafy",
+        "Hornet Spikey",
+        "Hornet Stingy",
+        "Jungle Creeper",
+        "Jungle Creeper Wall",
+        "Black Recluse Wall",
+        "Blood Crawler",
+        "Blood Crawler Wall",
+        "Blood Feeder",
+        "Blood Jelly",
+        "Ice Golem",
+        "Rainbow Slime",
+        "Golem",
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        "Angry Nimbus",
+        "Eyezor",
+        "Parrot",
+        "Reaper",
+        "Spore Zombie",
+        "Spore Zombie Hat",
+        "Fungo Fish",
+        "Anomura Fungus",
+        "Mushi Ladybug",
+        "Fungi Bulb",
+        "Giant Fungi Bulb",
+        "Fungi Spore",
+        "Plantera",
+        "Planteras Hook",
+        "Planteras Tentacle",
+        "Spore",
+        "Brain of Cthulhu",
+        "Creeper",
+        "Ichor Sticker",
+        "Rusty Armored Bones Axe",
+        "Rusty Armored Bones Flail",
+        "Rusty Armored Bones Sword",
+        "Rusty Armored Bones Sword No Armor",
+        "Blue Armored Bones",
+        "Blue Armored Bones Mace",
+        "Blue Armored Bones No Pants",
+        "Blue Armored Bones Sword",
+        "Hell Armored Bones",
+        "Hell Armored Bones Spike Shield",
+        "Hell Armored Bones Mace",
+        "Hell Armored Bones Sword",
+        "Ragged Caster",
+        "Ragged Caster Open Coat",
+        "Necromancer",
+        "Necromancer Armored",
+        "Diabolist",
+        "Diabolist White",
+        "Bone Lee",
+        "Dungeon Spirit",
+        "Giant Cursed Skull",
+        "Paladin",
+        "Skeleton Sniper",
+        "Tactical Skeleton",
+        "Skeleton Commando",
+        "Angry Bones Big",
+        "Angry Bones Big Muscle",
+        "Angry Bones Big Helmet",
+        "Blue Jay",
+        "Cardinal",
+        "Squirrel",
+        "Mouse",
+        "Raven",
+        "Slime Masked",
+        "Bunny Slimed",
+        "Hoppin Jack",
+        "Scarecrow",
+        "Scarecrow 2",
+        "Scarecrow 3",
+        "Scarecrow 4",
+        "Scarecrow 5",
+        "Scarecrow 6",
+        "Scarecrow 7",
+        "Scarecrow 8",
+        "Scarecrow 9",
+        "Scarecrow 10",
+        "Headless Horseman",
+        "Ghost",
+        "Demon Eye Owl",
+        "Demon Eye Spaceship",
+        "Zombie Doctor",
+        "Zombie Superman",
+        "Zombie Pixie",
+        "Skeleton Top Hat",
+        "Skeleton Astronaut",
+        "Skeleton Alien",
+        "Mourning Wood",
+        "Splinterling",
+        "Pumpking",
+        "Pumpking Scythe",
+        "Hellhound",
+        "Poltergeist",
+        "Zombie Xmas",
+        "Zombie Sweater",
+        "Slime Ribbon White",
+        "Slime Ribbon Yellow",
+        "Slime Ribbon Green",
+        "Slime Ribbon Red",
+        "Bunny Xmas",
+        "Zombie Elf",
+        "Zombie Elf Beard",
+        "Zombie Elf Girl",
+        "Present Mimic",
+        "Gingerbread Man",
+        "Yeti",
+        "Everscream",
+        "Ice Queen",
+        "Santa",
+        "Elf Copter",
+        "Nutcracker",
+        "Nutcracker Spinning",
+        "Elf Archer",
+        "Krampus",
+        "Flocko",
+        "Stylist",
+        "Webbed Stylist",
+        "Firefly",
+        "Butterfly",
+        "Worm",
+        "Lightning Bug",
+        "Snail",
+        "Glowing Snail",
+        "Frog",
+        "Duck",
+        "Duck 2",
+        "Duck White",
+        "Duck White 2",
+        "Scorpion Black",
+        "Scorpion",
+        "Traveling Merchant",
+        "Angler",
+        "Duke Fishron",
+        "Detonating Bubble",
+        "Sharkron",
+        "Sharkron 2",
+        "Truffle Worm",
+        "Truffle Worm Digger",
+        "Sleeping Angler",
+        "Grasshopper",
+        "Chattering Teeth Bomb",
+        "Blue Cultist Archer",
+        "White Cultist Archer",
+        "Brain Scrambler",
+        "Ray Gunner",
+        "Martian Officer",
+        "Bubble Shield",
+        "Gray Grunt",
+        "Martian Engineer",
+        "Tesla Turret",
+        "Martian Drone",
+        "Gigazapper",
+        "Scutlix Gunner",
+        "Scutlix",
+        "Martian Saucer",
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        "Moon Lord",
+        NULL_NAME,
+        NULL_NAME,
+        "Martian Probe",
+        NULL_NAME,
+        NULL_NAME,
+        "Milkyway Weaver",
+        NULL_NAME,
+        NULL_NAME,
+        "Star Cell",
+        "Star Cell Mini",
+        "Flow Invader",
+        NULL_NAME,
+        "Twinkle Popper",
+        "Twinkle",
+        "Stargazer",
+        "Crawltipede",
+        NULL_NAME,
+        NULL_NAME,
+        "Drakomire",
+        "Drakomire Rider",
+        "Sroller",
+        "Corite",
+        "Selenian",
+        "Nebula Floater",
+        "Brain Suckler",
+        "Vortex Pillar",
+        "Evolution Beast",
+        "Predictor",
+        "Storm Diver",
+        "Alien Queen",
+        "Alien Hornet",
+        "Alien Larva",
+        "Zombie Armed",
+        "Zombie Frozen",
+        "Zombie Armed Pincushion",
+        "Zombie Armed Frozen",
+        "Zombie Armed Slimed",
+        "Zombie Armed Swamp",
+        "Zombie Armed Twiggy",
+        "Zombie Armed Female",
+        "Mysterious Tablet",
+        "Lunatic Devotee",
+        "Lunatic Cultist",
+        "Lunatic Cultist Clone",
+        "Tax Collector",
+        "Gold Bird",
+        "Gold Bunny",
+        "Gold Butterfly",
+        "Gold Frog",
+        "Gold Grasshopper",
+        "Gold Mouse",
+        "Gold Worm",
+        "Skeleton Bone Throwing",
+        "Skeleton Bone Throwing 2",
+        "Skeleton Bone Throwing 3",
+        "Skeleton Bone Throwing 4",
+        "Skeleton Merchant",
+        "Phantasm Dragon",
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        NULL_NAME,
+        "Butcher",
+        "Creature from the Deep",
+        "Fritz",
+        "Nailhead",
+        "Crimtane Bunny",
+        "Crimtane Goldfish",
+        "Psycho",
+        "Deadly Sphere",
+        "Dr Man Fly",
+        "The Possessed",
+        "Vicious Penguin",
+        "Goblin Summoner",
+        "Shadowflame Apparation",
+        "Corrupt Mimic",
+        "Crimson Mimic",
+        "Hallowed Mimic",
+        "Jungle Mimic",
+        "Mothron",
+        "Mothron Egg",
+        "Baby Mothron",
+        "Medusa",
+        "Hoplite",
+        "Granite Golem",
+        "Granite Elemental",
+        "Enchanted Nightcrawler",
+        "Grubby",
+        "Sluggy",
+        "Buggy",
+        "Target Dummy",
+        "Blood Zombie",
+        "Drippler",
+        "Stardust Pillar",
+        "Crawdad",
+        "Crawdad 2",
+        "Giant Shelly",
+        "Giant Shelly 2",
+        "Salamander",
+        "Salamander 2",
+        "Salamander 3",
+        "Salamander 4",
+        "Salamander 5",
+        "Salamander 6",
+        "Salamander 7",
+        "Salamander 8",
+        "Salamander 9",
+        "Nebula Pillar",
+        "Antlion Charger Giant",
+        "Antlion Swarmer Giant",
+        "Dune Splicer",
+        NULL_NAME,
+        NULL_NAME,
+        "Tomb Crawler",
+        NULL_NAME,
+        NULL_NAME,
+        "Solar Flare",
+        "Solar Pillar",
+        "Drakanian",
+        "Solar Fragment",
+        "Martian Walker",
+        "Ancient Vision",
+        "Ancient Light",
+        "Ancient Doom",
+        "Ghoul",
+        "Vile Ghoul",
+        "Tainted Ghoul",
+        "Dreamer Ghoul",
+        "Lamia",
+        "Lamia Dark",
+        "Sand Poacher",
+        "Sand Poacher Wall",
+        "Basilisk",
+        "Desert Spirit",
+        "Tortured Soul",
+        "Spiked Slime",
+        "The Bride",
+        "Sand Slime",
+        "Red Squirrel",
+        "Gold Squirrel",
+        "Bunny Party",
+        "Sand Elemental",
+        "Sand Shark",
+        "Bone Biter",
+        "Flesh Reaver",
+        "Crystal Thresher",
+        "Angry Tumbler",
+        "QuestionMark",
+        "Eternia Crystal",
+        "Mysterious Portal",
+        "Tavernkeep",
+        "Betsy",
+        "Etherian Goblin",
+        "Etherian Goblin 2",
+        "Etherian Goblin 3",
+        "Etherian Goblin Bomber",
+        "Etherian Goblin Bomber 2",
+        "Etherian Goblin Bomber 3",
+        "Etherian Wyvern",
+        "Etherian Wyvern 2",
+        "Etherian Wyvern 3",
+        "Etherian Javelin Thrower",
+        "Etherian Javelin Thrower 2",
+        "Etherian Javelin Thrower 3",
+        "Dark Mage",
+        "Dark Mage T3",
+        "Old Ones Skeleton",
+        "Old Ones Skeleton T3",
+        "Wither Beast",
+        "Wither Beast T3",
+        "Drakin",
+        "Drakin T3",
+        "Kobold",
+        "Kobold T3",
+        "Kobold Glider",
+        "Kobold Glider T3",
+        "Ogre",
+        "Ogre T3",
+        "Etherian Lightning Bug",
+        "Unconscious Man",
+        "Walking Charger",
+        "Flying Antlion",
+        "Antlion Larva",
+        "Pink Fairy",
+        "Green Fairy",
+        "Blue Fairy",
+        "Zombie Merman",
+        "Wandering Eye Fish",
+        "Golfer",
+        "Golfer Rescue",
+        "Zombie Torch",
+        "Zombie Armed Torch",
+        "Gold Goldfish",
+        "Gold Goldfish Walker",
+        "Windy Balloon",
+        "Dragonfly Black",
+        "Dragonfly Blue",
+        "Dragonfly Green",
+        "Dragonfly Orange",
+        "Dragonfly Red",
+        "Dragonfly Yellow",
+        "Dragonfly Gold",
+        "Seagull",
+        "Seagull 2",
+        "Ladybug",
+        "Gold Ladybug",
+        "Maggot",
+        "Pupfish",
+        "Grebe",
+        "Grebe 2",
+        "Rat",
+        "Owl",
+        "Water Strider",
+        "Water Strider Gold",
+        "Explosive Bunny",
+        "Dolphin",
+        "Turtle",
+        "Turtle Jungle",
+        "Dreadnautilus",
+        "Blood Squid",
+        "Hemogoblin Shark",
+        "Blood Eel",
+        NULL_NAME,
+        NULL_NAME,
+        "Gnome",
+        "Sea Turtle",
+        "Sea Horse",
+        "Sea Horse Gold",
+        "Angry Dandelion",
+        "Ice Mimic",
+        "Blood Mummy",
+        "Rock Golem",
+        "Maggot Zombie",
+        "Zoologist",
+        "Spore Bat",
+        "Spore Skeleton",
+        "Empress of Light",
+        "Town Cat",
+        "Town Dog",
+        "Amethyst Squirrel",
+        "Topaz Squirrel",
+        "Sapphire Squirrel",
+        "Emerald Squirrel",
+        "Ruby Squirrel",
+        "Diamond Squirrel",
+        "Amber Squirrel",
+        "Amethyst Bunny",
+        "Topaz Bunny",
+        "Sapphire Bunny",
+        "Emerald Bunny",
+        "Ruby Bunny",
+        "Diamond Bunny",
+        "Amber Bunny",
+        "Hell Butterfly",
+        "Lavafly",
+        "Magma Snail",
+        "Town Bunny",
+        "Queen Slime",
+        "Crystal Slime",
+        "Bouncy Slime",
+        "Heavenly Slime",
+        "Prismatic Lacewing",
+        "Pirate Ghost",
+        "Princess",
+        "Toch God",
+        "Chaos Ball Tim",
+        "Vile Spit EoW",
+        "Golden Slime",
+        "Deerclops",
+        "Stinkbug",
+        "Nerdy Slime",
+        "Scarlet Macaw",
+        "Blue Macaw",
+        "Toucan",
+        "Yellow Cokatiel",
+        "Gray Cokatiel",
+        "Shimmer Slime",
+        "Faeling",
+        "Cool Slime",
+        "Elder Slime",
+        "Clumsy Slime",
+        "Diva Slime",
+        "Surly Slime",
+        "Squire Slime",
+        "Old Shaking Chest",
+        "Clumsy Balloon Slime",
+        "Mystic Frog");
 }
