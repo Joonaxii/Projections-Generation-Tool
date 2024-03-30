@@ -1,7 +1,5 @@
 #include <J-Core/Application.h>
 #include <vector>
-#include <imgui.h>
-#include <imgui_internal.h>
 #include <J-Core/Gui/IGuiDrawable.h>
 
 namespace Projections {

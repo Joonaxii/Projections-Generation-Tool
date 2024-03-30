@@ -463,7 +463,7 @@ bool JCore::IGuiDrawable<Projections::DropSource>::onGui(const char* label, Proj
             sprintf_s(tempBuf, "%s [No Pool]", label);
             break;
         case PoolType::Pool_NPC:
-            sprintf_s(tempBuf, "%s [Entity: %s]", label, isModded ? dInfo.strId.c_str() : EnumNames<Projections::NPCID>::getEnumName(NPCID(dInfo.id)));
+            sprintf_s(tempBuf, "%s [Entity: %s]", label, isModded ? dInfo.strId.c_str() : Enum::nameOf(NPCID(dInfo.id + NPCID::NPC_OFFSET)));
             break;
         case PoolType::Pool_FishingQuest:
             sprintf_s(tempBuf, "%s [Fishing Quest Reward]", label);
@@ -495,11 +495,18 @@ bool JCore::IGuiDrawable<Projections::DropSource>::onGui(const char* label, Proj
                     changed |= ImGui::Checkbox("Is NetID ##DropInfo", &isNetId);
                     dInfo.setIsNetID(isNetId);
 
+                    NPCID tempID = NPCID(dInfo.id + NPCID::NPC_OFFSET);
                     if (isNetId) {
-                        changed |= Gui::drawEnumList<NPCID, 1>("Source Entity (NetID)", reinterpret_cast<NPCID&>(dInfo.id), true, true);
+                        if (Gui::drawEnumList<NPCID, 0>("Source Entity (NetID)", tempID, true, true)) {
+                            dInfo.id = int32_t(tempID) - NPCID::NPC_OFFSET;
+                            changed = true;
+                        }
                     }
                     else {
-                        changed |= Gui::drawEnumList<NPCID, 0>("Source Entity", reinterpret_cast<NPCID&>(dInfo.id), true, true);
+                        if (Gui::drawEnumList<NPCID, 1>("Source Entity", tempID, true, true)) {
+                            dInfo.id = int32_t(tempID) - NPCID::NPC_OFFSET;
+                            changed = true;
+                        }
                     }
                 }
                 break;
