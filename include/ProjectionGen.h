@@ -77,6 +77,7 @@ namespace Projections {
         }
 
         bool from(const uint8_t* data, size_t size) {
+            using namespace JCore;
             clear();
             if (size < 0 || !data) { return false; }
             size_t chunkSize = Math::max(size >> 3, 1ULL);
@@ -1113,6 +1114,7 @@ namespace Projections {
         }
 
         int32_t indexOf(JCore::Color32 color) const {
+            using namespace JCore;
             if (count > (SIZE >> 2)) {
                 static constexpr int32_t OFFFSET_LUT[64]{
                     0 , 0 , 0 , 0 ,
@@ -1383,6 +1385,7 @@ namespace Projections {
         }
 
         void write(const Stream& stream) const {
+            using namespace JCore;
             stream.writeValue(type, 1, false);
             stream.writeValue(Math::max(count, 1), 1, false);
             switch (type)
@@ -1429,6 +1432,7 @@ namespace Projections {
             jsonF = arr;
         }
         void read(const json& jsonF) {
+            using namespace JCore;
             reset();
             const json* arr = nullptr;
             if (jsonF.is_array()) {
@@ -1497,6 +1501,7 @@ namespace Projections {
         }
 
         void write(const Stream& stream) const {
+            using namespace JCore;
             int32_t maxAlts = 0;
             for (size_t i = 0; i < items.size(); i++) {
                 maxAlts = Math::max(int32_t(items[i].ingredients.size()) - 1, maxAlts);
@@ -1637,6 +1642,7 @@ namespace Projections {
         }
 
         void read(const json& jsonF) {
+            using namespace JCore;
             reset();
             if (jsonF.is_object()) {
                 pool = jsonF.value("pool", PoolType::Pool_None);
@@ -2059,20 +2065,24 @@ namespace Projections {
     };
 
     struct PrLayer {
-        std::string name{};
         PLayerFlags flags{};
+        std::string name{};
+        int32_t stackThreshold{};
 
         void reset() {
             name = "Default";
             flags = PLa_DefaultState;
+            stackThreshold = 1;
         }
 
         void read(const json& jsonF) {
+            using namespace JCore;
             reset();
             if (jsonF.is_object()) {
                 name = JCore::IO::readString(jsonF, "name", "Default");
                 flags = jsonF.value("defaultState", false) ? PLa_DefaultState : PLa_None;
                 flags = PLayerFlags(flags | (jsonF.value("isTransparent", false) ? PLa_IsTransparent : PLa_None));
+                stackThreshold = Math::clamp(jsonF.value("stackThreshold", 1), 1, 999);
             }
         }
 
@@ -2080,11 +2090,13 @@ namespace Projections {
             jsonF["name"] = name;
             jsonF["defaultState"] = (flags & PLa_DefaultState) != 0;
             jsonF["isTransparent"] = (flags & PLa_IsTransparent) != 0;
+            jsonF["stackThreshold"] = stackThreshold;
         }
 
         void write(const Stream& stream) const {
-            writeShortString(name, stream);
             stream.writeValue(flags);
+            writeShortString(name, stream);
+            stream.writeValue(stackThreshold);
         }
     };
 
@@ -2318,6 +2330,7 @@ namespace Projections {
         }
 
         void read(const json& jsonF) {
+            using namespace JCore;
             reset();
             if (jsonF.is_object()) {
                 type = jsonF.value("type", PType::PTY_Projection);
