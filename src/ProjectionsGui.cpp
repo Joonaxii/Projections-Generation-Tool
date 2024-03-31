@@ -1,6 +1,6 @@
 #include <ProjectionsGui.h>
 #include <J-Core/Log.h>
-#include <J-Core/ThreadManager.h>
+#include <J-Core/TaskManager.h>
 using namespace JCore;
 
 namespace Projections {
@@ -194,23 +194,74 @@ namespace Projections {
         if (IO::exists(outPath)) {
             TaskManager::beginTask([outPath, flags, panel]()
                 {
-                    TaskProgress progress{};
-                    progress.setTitle("Exporting...");
-                    progress.progress.clear();
-                    progress.subProgress.clear();
-                    progress.flags |= TaskProgress::HAS_SUB_TASK;
-                    progress.setMessage("Exporting Projections...");
-                    progress.setSubMessage("Writing...");
-                    progress.preview = nullptr;
-                    TaskManager::reportProgress(progress);
-                    progress.preview = &panel->getBuffers().frameBuffer;
-
+                    const ImageData* preview = &panel->getBuffers().frameBuffer;
                     auto& sources = panel->getSources();
-                    float lenSR = Math::max<float>(float(sources.size()), 1.0f);
 
-                    static constexpr float PERCENT = 1.0f / 3.0f;
-                    float startP = 0;
-                    size_t ind = 0;
+                    std::vector<Projection*> projections{};
+                    std::vector<PMaterial*> materials{};
+                    std::vector<PBundle*> bundles{};
+
+                    size_t tP = 0;
+                    size_t tM = 0;
+                    size_t tB = 0;
+                    for (auto& src : sources) {
+                        uint8_t toExport = flags & src.isValid;
+                        tP += src.totalProjections;
+                        projections.reserve(tP);
+
+                        tM += src.totalMaterials;
+                        materials.reserve(tM);
+
+                        tB += src.totalBundles;
+                        bundles.reserve(tB);
+
+                        if (src.isValidDir() && toExport != 0) {
+                            if (toExport & ProjectionSource::VALID_PROJECTIONS) {
+                                for (auto& gr : src.projections) {
+                                    if (gr.noExport) { continue; }
+                                    for (auto& itm : gr.projections) {
+                                        if (itm.material.noExport) { continue; }
+                                        projections.push_back(&itm);
+                                    }
+                                }
+                            }
+
+                            if (toExport & ProjectionSource::VALID_MATERIALS) {
+                                for (auto& gr : src.materials) {
+                                    if (gr.noExport) { continue; }
+                                    for (auto& itm : gr.materials) {
+                                        if (itm.noExport) { continue; }
+                                        materials.push_back(&itm);
+                                    }
+                                }
+                            }
+
+                            if (toExport & ProjectionSource::VALID_MATERIALS) {
+                                for (auto& gr : src.bundles) {
+                                    if (gr.noExport) { continue; }
+                                    for (auto& itm : gr.bundles) {
+                                        if (itm.material.noExport) { continue; }
+                                        bundles.push_back(&itm);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    REPORT_PROGRESS(
+                        TaskManager::setTaskTitle("Exporting...");
+                        TaskManager::reportPreview(nullptr);
+
+                        TaskManager::regLevel(0);
+                        TaskManager::regLevel(1);
+                        TaskManager::regLevel(2);
+
+                        TaskManager::report(0, "Exporting Projections...");
+                        TaskManager::report(1, "Writing...");
+                        TaskManager::reportProgress(0, 0.0, -1, (bundles.size() > 0 ? 1 : 0) + (materials.size() > 0 ? 1 : 0) + (projections.size() > 0 ? 1 : 0));
+                        TaskManager::reportProgress(1, 0.0, -2, projections.size());
+                        TaskManager::reportProgress(2, 0.0, 0.0, 0.0);
+                    );
 
                     FileStream fs{};
                     std::string outFile{};
@@ -220,222 +271,165 @@ namespace Projections {
                     char tmpInfo[64]{};
 
                     std::chrono::steady_clock::time_point time{};
-                    for (size_t i = 0; i < sources.size(); i++)
-                    {
-                        auto& source = sources[i];
-   
-                        uint8_t toExport = flags & source.isValid;
-                        if (source.isValidDir() && toExport != 0) {
+                    for (auto& proj : projections) {
+                        REPORT_PROGRESS(
+                            TaskManager::report(1, "Writing... %s", proj->material.nameID.c_str());
+                        );
 
-                            startP = 0;
-                            progress.subProgress.setProgress(startP);
+                        outName = proj->material.nameID;
+                        sanitizeFileName(outName);
+                        outName.append(".pdat");
 
-                            TaskManager::clearPreview();
-                            if (TaskManager::isCancelling()) {
-                                JCORE_WARN("Cancelled Exporting!");
-                                return;
-                            }
-                            if (flags & ProjectionSource::VALID_PROJECTIONS) {
-                                auto& projGs = source.projections;
-                                for (size_t j = 0; j < projGs.size(); j++) {
-                                    auto& projG = projGs[j];
-                                    auto sv = IO::getName(projG.path);
-                                    if (!projG.noExport) {
-                                        float fLen = Math::max<float>(float(projG.projections.size()), 1.0f);
-                                        progress.setMessage("Exporting Projections... %.*s", sv.length(), sv.data());
-                                        progress.setSubMessage("Writing...");
-                                        progress.subProgress.setProgress(startP);
-                                        TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS | TASK_COPY_MESSAGE | TASK_COPY_SUBMESSAGE);
+                        outFile = IO::combine(outPath, outName);
+                        outFileTmp = outFile;
+                        outFileTmp.append(".tmp");
 
-                                        for (size_t k = 0; k < projG.projections.size(); k++) {
-                                            auto& proj = projG.projections[k];
-                                            if (!proj.material.noExport) {
-                                                progress.setSubMessage("Writing... %s", proj.material.nameID.c_str());
-                                                TaskManager::reportProgress(progress, TASK_COPY_SUBMESSAGE);
-                                                outName = proj.material.nameID;
-                                                sanitizeFileName(outName);
-                                                outName.append(".pdat");
+                        if (fs.open(outFileTmp, "wb")) {
+                            fs.write(HEADER, 1, 4, false);
+                            fs.writeValue(Projections::PROJ_GEN_VERSION);
+                            time = std::chrono::high_resolution_clock::now();
+                            if (proj->write(fs, panel->getBuffers())) {
+                                Utils::formatDataSize(tmpSize, fs.size());
+                                fs.close();
 
-                                                outFile = IO::combine(outPath, outName);
-                                                outFileTmp = outFile;
-                                                outFileTmp.append(".tmp");
-
-                                                if (fs.open(outFileTmp, "wb")) {
-                                                    fs.write(HEADER, 1, 4, false);
-                                                    fs.writeValue(Projections::PROJ_GEN_VERSION);
-                                                    time = std::chrono::high_resolution_clock::now();
-                                                    if (proj.write(fs, panel->getBuffers())) {
-                                                        Utils::formatDataSize(tmpSize, fs.size());
-                                                        fs.close();
-
-                                                        IO::moveFile(outFileTmp, outFile, true);
-                                                        int32_t pCount = panel->getBuffers().palette.count;
-                                                        if (pCount > 256) {
-                                                            sprintf_s(tmpInfo, "16-Bit Indexed [%d]", pCount);
-                                                        }
-                                                        else if (pCount > 1) {
-                                                            sprintf_s(tmpInfo, "8-Bit Indexed [%d]", pCount);
-                                                        }
-                                                        else {
-                                                            sprintf_s(tmpInfo, "RGBA32");
-                                                        }
-
-                                                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - time).count();
-                                                        JCORE_INFO("Exported Projection '{}'! ({} - {} | Elapsed: {} sec, {} ms)", proj.material.nameID, tmpInfo, tmpSize, (elapsed / 1000.0), elapsed);
-                                                    }
-                                                    else {
-                                                        fs.close();
-                                                        fs::remove(outFileTmp);
-                                                        if (TaskManager::performSkip()) {
-                                                            JCORE_WARN("Skipped Exporting '{}'!", proj.material.nameID);
-                                                        }
-                                                        else if (TaskManager::isCancelling()) {
-                                                            JCORE_WARN("Cancelled Exporting!");
-                                                            return;
-                                                        }
-                                                        else {
-                                                            JCORE_ERROR("Failed to export Projection '{}'", proj.material.nameID);
-                                                        }
-                                                    }
-                                                }
-                                                else {
-                                                    JCORE_ERROR("Failed to export Projection '{}', could not open file '{}' for writing!", proj.material.nameID, outFileTmp);
-                                                }
-                                            }
-                                            progress.subProgress.setProgress(startP + (k + 1) / fLen);
-                                            TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
-                                        }
-                                    }
+                                IO::moveFile(outFileTmp, outFile, true);
+                                int32_t pCount = panel->getBuffers().palette.count;
+                                if (pCount > 256) {
+                                    sprintf_s(tmpInfo, "16-Bit Indexed [%d]", pCount);
                                 }
+                                else if (pCount > 1) {
+                                    sprintf_s(tmpInfo, "8-Bit Indexed [%d]", pCount);
+                                }
+                                else {
+                                    sprintf_s(tmpInfo, "RGBA32");
+                                }
+
+                                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - time).count();
+                                JCORE_INFO("Exported Projection '{}'! ({} - {} | Elapsed: {} sec, {} ms)", proj->material.nameID, tmpInfo, tmpSize, (elapsed / 1000.0), elapsed);
                             }
                             else {
-                                TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
-                            }
-                            startP += PERCENT;
-
-                            TaskManager::clearPreview();
-                            progress.subProgress.setProgress(startP);
-
-                            if (TaskManager::isCancelling()) {
-                                JCORE_WARN("Cancelled Exporting!");
-                                return;
-                            }
-                            if (flags & ProjectionSource::VALID_MATERIALS) {
-                                auto& matGs = source.materials;
-                                for (size_t j = 0; j < matGs.size(); j++) {
-                                    auto& matG = matGs[j];
-                                    auto sv = IO::getName(matG.path);
-                                    if (!matG.noExport) {
-                                        float fLen = Math::max<float>(float(matG.materials.size()), 1.0f);
-                                        progress.setMessage("Exporting P-Materials... %.*s", sv.length(), sv.data());
-                                        progress.setSubMessage("Writing...");
-                                        progress.subProgress.setProgress(startP);
-                                        TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS | TASK_COPY_MESSAGE | TASK_COPY_SUBMESSAGE);
-
-                                        for (size_t k = 0; k < matG.materials.size(); k++) {
-                                            auto& mat = matG.materials[k];
-                                            if (!mat.noExport) {
-                                                progress.setSubMessage("Writing... %s", mat.nameID.c_str());
-                                                TaskManager::reportProgress(progress, TASK_COPY_SUBMESSAGE);
-                                                outName = mat.nameID;
-                                                sanitizeFileName(outName);
-                                                outName.append(".pmat");
-
-                                                outFile = IO::combine(outPath, outName);
-                                                outFileTmp = outFile;
-                                                outFileTmp.append(".tmp");
-
-                                                if (fs.open(outFileTmp, "wb")) {
-                                                    fs.write(HEADER, 1, 4, false);
-                                                    fs.writeValue(Projections::PROJ_GEN_VERSION);
-                                                    mat.write(fs);
-
-                                                    Utils::formatDataSize(tmpSize, fs.size());
-                                                    fs.close();
-                                                    IO::moveFile(outFileTmp, outFile, true);
-                                                    JCORE_INFO("Exported P-Material '{}'! ({})", mat.nameID, tmpSize);
-                                                }
-                                                else {
-                                                    JCORE_ERROR("Failed to export P-Material '{}', could not open file {} for writing!", mat.nameID, outFileTmp);
-                                                }
-                                            }
-                                            progress.subProgress.setProgress(startP + (k + 1) / fLen);
-                                            TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
-                                        }
-                                    }
+                                fs.close();
+                                fs::remove(outFileTmp);
+                                if (TaskManager::performSkip()) {
+                                    JCORE_WARN("Skipped Exporting '{}'!", proj->material.nameID);
+                                }
+                                else if (TaskManager::isCanceling()) {
+                                    JCORE_WARN("Cancelled Exporting!");
+                                    TaskManager::unregLevel(2);
+                                    goto endTask;
+                                }
+                                else {
+                                    JCORE_ERROR("Failed to export Projection '{}'", proj->material.nameID);
                                 }
                             }
-                            else {
-                                TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
-                            }
-                            startP += PERCENT;
-
-                            TaskManager::clearPreview();
-                            progress.subProgress.setProgress(startP);
-
-                            if (TaskManager::isCancelling()) {
-                                JCORE_WARN("Cancelled Exporting!");
-                                return;
-                            }
-                            if (flags & ProjectionSource::VALID_BUNDLES) {
-                                auto& bunGs = source.bundles;
-                                for (size_t j = 0; j < bunGs.size(); j++) {
-                                    auto& bunG = bunGs[j];
-                                    auto sv = IO::getName(bunG.path);
-                                    if (!bunG.noExport) {
-                                        float fLen = Math::max<float>(float(bunG.bundles.size()), 1.0f);
-                                        progress.setMessage("Exporting P-Bundles... %.*s", sv.length(), sv.data());
-                                        progress.setSubMessage("Writing...");
-                                        progress.subProgress.setProgress(startP);
-                                        TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS | TASK_COPY_MESSAGE | TASK_COPY_SUBMESSAGE);
-
-                                        for (size_t k = 0; k < bunG.bundles.size(); k++) {
-                                            auto& bund = bunG.bundles[k];
-                                            if (!bund.material.noExport) {
-                                                progress.setSubMessage("Writing... %s", bund.material.nameID.c_str());
-                                                TaskManager::reportProgress(progress, TASK_COPY_SUBMESSAGE);
-                                                outName = bund.material.nameID;
-                                                sanitizeFileName(outName);
-                                                outName.append(".pbun");
-
-                                                outFile = IO::combine(outPath, outName);
-                                                outFileTmp = outFile;
-                                                outFileTmp.append(".tmp");
-
-                                                if (fs.open(outFileTmp, "wb")) {
-                                                    fs.write(HEADER, 1, 4, false);
-                                                    fs.writeValue(Projections::PROJ_GEN_VERSION);
-                                                    bund.write(fs);
-                                                    Utils::formatDataSize(tmpSize, fs.size());
-                                                    fs.close();
-                                                    IO::moveFile(outFileTmp, outFile, true);
-                                                    JCORE_INFO("Exported P-Bundle {}! ({})", bund.material.nameID, tmpSize);
-                                                }
-                                                else {
-                                                    JCORE_ERROR("Failed to export P-Bundle {}, could not open file {} for writing!", bund.material.nameID, outFileTmp);
-                                                }
-                                            }
-                                            progress.subProgress.setProgress(startP + (k + 1) / fLen);
-                                            TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
-                                        }
-                                    }
-                                }
-                            }
-                            else {
-                                TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
-                            }
-                            startP += PERCENT;
-
-                            progress.subProgress.setProgress(startP);
-                            TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
+                        }
+                        else {
+                            JCORE_ERROR("Failed to export Projection '{}', could not open file '{}' for writing!", proj->material.nameID, outFileTmp);
                         }
 
-                        progress.progress.setProgress((i + 1) / lenSR);
-                        TaskManager::reportProgress(progress, TASK_COPY_PROGRESS);
+                        REPORT_PROGRESS(
+                            TaskManager::reportProgress(2, 0);
+                            TaskManager::reportIncrement(1);
+                        );
+                    }
+                    JCORE_TRACE("Exported {} Projections...", projections.size());
+                    REPORT_PROGRESS(
+                        TaskManager::reportProgress(1, 0.0, 0, materials.size());
+                        TaskManager::unregLevel(2);
+                        TaskManager::reportIncrement(0);
+                        TaskManager::report(0, "Exporting P-Materials...");
+                    );
+                    if (TaskManager::isCanceling()) {
+                        JCORE_WARN("Cancelled Exporting!");
+                        goto endTask;
                     }
 
+                    for (auto& mat : materials) {
+                        REPORT_PROGRESS(
+                            TaskManager::report(1, "Writing... %s", mat->nameID.c_str());
+                        );
+                        outName = mat->nameID;
+                        sanitizeFileName(outName);
+                        outName.append(".pmat");
 
-                }, []() {});
+                        outFile = IO::combine(outPath, outName);
+                        outFileTmp = outFile;
+                        outFileTmp.append(".tmp");
+
+                        if (fs.open(outFileTmp, "wb")) {
+                            fs.write(HEADER, 1, 4, false);
+                            fs.writeValue(Projections::PROJ_GEN_VERSION);
+                            mat->write(fs);
+
+                            Utils::formatDataSize(tmpSize, fs.size());
+                            fs.close();
+                            IO::moveFile(outFileTmp, outFile, true);
+                            JCORE_INFO("Exported P-Material '{}'! ({})", mat->nameID, tmpSize);
+                        }
+                        else {
+                            JCORE_ERROR("Failed to export P-Material '{}', could not open file {} for writing!", mat->nameID, outFileTmp);
+                        }
+
+                        REPORT_PROGRESS(
+                            TaskManager::reportProgress(2, 0);
+                            TaskManager::reportIncrement(1);
+                        );
+                    }
+                    JCORE_TRACE("Exported {} P-Materials...", materials.size());
+                    REPORT_PROGRESS(
+                        TaskManager::reportProgress(1, 0.0, 0, bundles.size());
+                        TaskManager::reportIncrement(0);
+                        TaskManager::report(0, "Exporting P-Bundles...");
+                    );
+
+                    if (TaskManager::isCanceling()) {
+                        JCORE_WARN("Cancelled Exporting!");
+                        goto endTask;
+                    }
+
+                    for (auto& bun : bundles) {
+                        REPORT_PROGRESS(
+                            TaskManager::report(1, "Writing... %s", bun->material.nameID.c_str());
+                        );
+
+                        outName = bun->material.nameID;
+                        sanitizeFileName(outName);
+                        outName.append(".pbun");
+
+                        outFile = IO::combine(outPath, outName);
+                        outFileTmp = outFile;
+                        outFileTmp.append(".tmp");
+
+                        if (fs.open(outFileTmp, "wb")) {
+                            fs.write(HEADER, 1, 4, false);
+                            fs.writeValue(Projections::PROJ_GEN_VERSION);
+                            bun->write(fs);
+                            Utils::formatDataSize(tmpSize, fs.size());
+                            fs.close();
+                            IO::moveFile(outFileTmp, outFile, true);
+                            JCORE_INFO("Exported P-Bundle {}! ({})", bun->material.nameID, tmpSize);
+                        }
+                        else {
+                            JCORE_ERROR("Failed to export P-Bundle {}, could not open file {} for writing!", bun->material.nameID, outFileTmp);
+                        }
+
+                        REPORT_PROGRESS(
+                            TaskManager::reportProgress(2, 0);
+                            TaskManager::reportIncrement(1);
+                        );
+                    }
+                    JCORE_TRACE("Exported {} P-Bundles...", bundles.size());
+                    REPORT_PROGRESS(
+                        TaskManager::reportProgress(1, double(bundles.size()));
+                        TaskManager::reportIncrement(0);
+                    );
+
+                endTask:
+                    REPORT_PROGRESS(
+                        TaskManager::unregLevel(0);
+                        TaskManager::unregLevel(1);
+                    );
+                }, NO_TASK, NO_TASK, Task::F_HAS_CANCEL | Task::F_HAS_SKIP | Task::F_HAS_PREVIEW);
         }
     }
 
@@ -447,7 +441,7 @@ namespace Projections {
 
         float fullH = ImGui::GetContentRegionAvail().y - 5;
         float fullW = ImGui::GetContentRegionAvail().x;
-        
+
         static float halfW = 0.5f;
         static float editW = 0.5f;
 
@@ -695,7 +689,7 @@ namespace Projections {
             halfH = hH / fullH;
             editH = eH / fullH;
         }
-      
+
         if (shouldLoad) {
             load();
         }
@@ -747,29 +741,32 @@ namespace Projections {
 
         TaskManager::beginTask([this, loaded, loadPr, loadMt, loadBu]()
             {
-                TaskProgress progress{};
-                progress.setTitle("Reading Configs...");
-                progress.progress.clear();
-                progress.subProgress.clear();
-                progress.flags |= TaskProgress::HAS_SUB_TASK;
-                progress.setMessage("Loading Sources...");
-                progress.setSubMessage("Loading...");
-                TaskManager::reportProgress(progress);
                 std::vector<fs::path> pathsProj{};
                 std::vector<fs::path> pathsPMat{};
                 std::vector<fs::path> pathsPBun{};
 
                 static constexpr float PERCENT = 1.0f / 3.0f;
+                REPORT_PROGRESS(
+                    TaskManager::regLevel(0);
+                TaskManager::regLevel(1);
+                TaskManager::regLevel(2);
 
-                float  startP = 0;
-                size_t ind = 0;
+                TaskManager::setTaskTitle("Reading Configs...");
+                TaskManager::report(0, "Loading Sources...");
+                TaskManager::report(1, "Loading...");
 
-                float lenFS = Math::max<float>(float(_sources.size()), 1.0f);
+                TaskManager::reportProgress(0, 0.0, 0.0, _sources.size());
+                TaskManager::reportProgress(1, 0.0, 0.0, 3.0);
+                TaskManager::reportProgress(2, 0.0, 0.0, 0.0);
+                );
+
+                if (TaskManager::isCanceling()) {
+                    goto taskEnd;
+                }
+
                 char temp[513]{};
                 for (size_t i = 0; i < _sources.size(); i++) {
                     auto& src = _sources[i];
-                    startP = 0;
-
                     if (src.shouldLoad) {
                         src.reset();
 
@@ -778,14 +775,13 @@ namespace Projections {
                         pathsPBun.clear();
 
                         auto fName = IO::getName(src.path);
-                        progress.setSubMessage("Loading Projections... %.*s", fName.length(), fName.data());
+                        REPORT_PROGRESS(
+                            TaskManager::report(1, "Loading Projections... %.*s", fName.length(), fName.data());
+                        TaskManager::reportStep(0, 0.0);
+                        TaskManager::reportProgress(1, 0.0, 0.0, 3.0);
+                        TaskManager::reportProgress(2, 0.0, 0.0, 0.0);
+                        );
 
-                        progress.subProgress.setProgress(0.0f);
-                        TaskManager::reportProgress(progress, TASK_COPY_SUBMESSAGE | TASK_COPY_SUBPROGRESS);
-
-                        auto& proj = src.projections;
-                        // Projections
-                   
                         std::string_view rootPath = src.path;
                         if (Utils::endsWith(src.path, ".txt", false)) {
                             rootPath = IO::getDirectory(src.path);
@@ -797,7 +793,11 @@ namespace Projections {
                         size_t left = sizeof(temp) - rootPath.length();
                         char* namePart = temp + rootPath.length();
                         for (auto& sDir : src.dirs) {
-                            if (sDir.length() > 1) { 
+                            if (TaskManager::isCanceling()) {
+                                goto taskEnd;
+                            }
+
+                            if (sDir.length() > 1) {
                                 sprintf_s(namePart, left, "%.*s", int32_t(sDir.length()), sDir.data());
                             }
 
@@ -821,73 +821,104 @@ namespace Projections {
                             if (sDir.length() < 2) { break; }
                         }
 
+                        // Projections
                         if (pathsProj.size() > 0) {
-                            float fLen = Math::max(pathsProj.size() - 1.0f, 1.0f);
-                            ind = 0;
+                            auto& proj = src.projections;
+                            REPORT_PROGRESS(
+                                TaskManager::reportStep(1, 0.0);
+                                TaskManager::reportTarget(2, 0.0, pathsProj.size());
+                            );
+
                             proj.reserve(pathsProj.size());
                             std::string str{};
                             for (auto& pth : pathsProj) {
+                                if (TaskManager::isCanceling()) {
+                                    goto taskEnd;
+                                }
+
                                 str = pth.string();
                                 if (!proj.emplace_back(str).read()) {
                                     JCORE_WARN("Failed to load '{}'", str);
                                 }
-                                else { (*loadPr)++; }
-                                progress.progress.setProgress(startP + (ind / fLen) * PERCENT);
-                                TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
+                                else { 
+                                    (*loadPr)++; 
+                                }
+                                src.totalProjections++;
+                                REPORT_PROGRESS(
+                                    TaskManager::reportIncrement(2);
+                                    TaskManager::reportStepFrom(1, 2);
+                                );
                             }
                             src.isValid |= ProjectionSource::VALID_PROJECTIONS;
                         }
 
                         // P-Materials
-                        startP += PERCENT;
-                        progress.subProgress.setProgress(startP);
-                        progress.setSubMessage("Loading P-Materials... %.*s", fName.length(), fName.data());
-                        TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS | TASK_COPY_SUBMESSAGE);
+                        REPORT_PROGRESS(
+                            TaskManager::report(1, "Loading P-Materials... %.*s", fName.length(), fName.data());
+                        );
 
-                        auto& mats = src.materials;
                         if (pathsPMat.size() > 0) {
-                            float fLen = Math::max(pathsPMat.size() - 1.0f, 1.0f);
-                            ind = 0;
+                            auto& mats = src.materials;
+                            REPORT_PROGRESS(
+                                TaskManager::reportStep(1, 0.0);
+                            TaskManager::reportTarget(2, 0.0, pathsPMat.size());
+                            );
+
                             mats.reserve(pathsPMat.size());
                             std::string str{};
                             for (auto& pth : pathsPMat) {
+
+                                if (TaskManager::isCanceling()) {
+                                    goto taskEnd;
+                                }
+
                                 str = pth.string();
                                 if (!mats.emplace_back(str).read()) {
                                     JCORE_WARN("Failed to load '{}'", str);
                                 }
                                 else { (*loadMt)++; }
-                                progress.progress.setProgress(startP + (ind / fLen) * PERCENT);
-                                TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
+                                src.totalMaterials++;
+                                REPORT_PROGRESS(
+                                    TaskManager::reportIncrement(2);
+                                TaskManager::reportStepFrom(1, 2);
+                                );
                             }
                             src.isValid |= ProjectionSource::VALID_MATERIALS;
                         }
 
                         // P-Bundles
-                        startP += PERCENT;
-                        progress.subProgress.setProgress(startP);
-                        progress.setSubMessage("Loading P-Bundles... %.*s", fName.length(), fName.data());
-                        TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS | TASK_COPY_SUBMESSAGE);
+                        REPORT_PROGRESS(
+                            TaskManager::report(1, "Loading P-Bundles... %.*s", fName.length(), fName.data());
+                        );
 
-                        auto& buns = src.bundles;
                         if (pathsPBun.size() > 0) {
-                            float fLen = Math::max(pathsPBun.size() - 1.0f, 1.0f);
-                            ind = 0;
+                            auto& buns = src.bundles;
+                            REPORT_PROGRESS(
+                                TaskManager::reportStep(1, 0.0);
+                            TaskManager::reportTarget(2, 0.0, pathsPBun.size());
+                            );
+
                             buns.reserve(pathsPBun.size());
                             std::string str{};
                             for (auto& pth : pathsPBun) {
+
+                                if (TaskManager::isCanceling()) {
+                                    goto taskEnd;
+                                }
+
                                 str = pth.string();
                                 if (!buns.emplace_back(str).read()) {
                                     JCORE_WARN("Failed to load '{}'", str);
                                 }
                                 else { (*loadBu)++; }
-                                progress.progress.setProgress(startP + (ind / fLen) * PERCENT);
-                                TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
+                                src.totalBundles++;
+                                REPORT_PROGRESS(
+                                    TaskManager::reportIncrement(2);
+                                TaskManager::reportStepFrom(1, 2);
+                                );
                             }
                             src.isValid |= ProjectionSource::VALID_BUNDLES;
                         }
-
-                        progress.subProgress.setProgress(1.0f);
-                        TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
                         src.shouldLoad = false;
                     }
                     else {
@@ -909,15 +940,26 @@ namespace Projections {
                             }
                         }
                     }
-                    progress.progress.setProgress((i + 1.0f) / lenFS);
-                    TaskManager::reportProgress(progress, TASK_COPY_PROGRESS);
-                }
 
-                progress.progress.setProgress(1.0f);
-                progress.subProgress.setProgress(1.0f);
-                TaskManager::reportProgress(progress);
+                    REPORT_PROGRESS(
+                        TaskManager::reportIncrement(0);
+                    TaskManager::reportProgress(1, 0.0, 0.0, 3.0);
+                    TaskManager::reportProgress(2, 0.0, 0.0, 0.0);
+                    );
+                }
                 *loaded = true;
-            }, []() {});
+
+            taskEnd:
+                REPORT_PROGRESS(
+                    TaskManager::unregLevel(0);
+                    TaskManager::unregLevel(1);
+                    TaskManager::unregLevel(2);
+                );
+
+                if (!*loaded) {
+                    JCORE_WARN("Cancelled source loading!");
+                }
+            }, NO_TASK, NO_TASK, Task::F_HAS_CANCEL);
     }
 
     bool ProjectionGroup::read() {

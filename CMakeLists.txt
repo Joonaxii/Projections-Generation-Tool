@@ -7,10 +7,22 @@ project ("Projections-GUI")
 add_subdirectory("ext/J-Core")
 set(PROJECTIONS_SOURCES  )
 
+add_compile_definitions(GLEW_STATIC)
+add_compile_definitions(_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS)
 IF (WIN32)
 	add_compile_definitions(WIN32_LEAN_AND_MEAN)
 	add_compile_definitions(NOMINMAX)
 ENDIF(WIN32)
+
+target_compile_options(
+    spdlog PRIVATE
+    /external:W0 /W0
+)
+
+target_compile_options(
+    ImGUI PRIVATE
+    /external:W0 /W0
+)
 
 set(RESOURCE "${CMAKE_SOURCE_DIR}/res/Resource.rc" "${CMAKE_SOURCE_DIR}/res/Icon.ico")
 

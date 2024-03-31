@@ -1,6 +1,6 @@
 #include <ProjectionsApp.h>
 
-#include <J-Core/ThreadManager.h>
+#include <J-Core/TaskManager.h>
 #include <J-Core/Math/Math.h>
 #include <J-Core/Util/StringUtils.h>
 
@@ -27,7 +27,7 @@ namespace Projections {
     }
 
     void ProjectionsApp::doGui() {
-        bool shouldBeDisabled = JCore::TaskManager::getCurrentTask().isRunning();
+        bool shouldBeDisabled = JCore::TaskManager::isRunning();
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking;

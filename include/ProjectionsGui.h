@@ -81,6 +81,10 @@ namespace Projections {
         std::vector<PBundleGroup> bundles{};
         std::vector<std::string> dirs{};
 
+        size_t totalProjections{ 0 };
+        size_t totalMaterials{ 0 };
+        size_t totalBundles{ 0 };
+
         bool shouldLoad{};
         uint8_t isValid{};
 
@@ -93,6 +97,9 @@ namespace Projections {
         }
 
         void reset() {
+            totalProjections = 0;
+            totalMaterials = 0;
+            totalBundles = 0;
             for (auto& item : projections) {
                 item.reset();
             }

@@ -4,7 +4,7 @@
 #include <J-Core/Log.h>
 #include <J-Core/IO/Image.h>
 #include <J-Core/Util/StringUtils.h>
-#include <J-Core/ThreadManager.h>
+#include <J-Core/TaskManager.h>
 #include <J-Core/Math/Color24.h>
 #include <J-Core/Math/Color32.h>
 
@@ -64,6 +64,18 @@ namespace Projections {
 
     static void readAsColor32(const ImageData& src, Color32* pixels, uint8_t alphaClip) {
         int32_t pixC = src.width * src.height;
+        if (src.format == TextureFormat::RGBA32) {
+            memcpy(pixels, src.data, pixC * sizeof(Color32));
+            if (alphaClip > 0) {
+                for (int32_t i = 0; i < pixC; i++) {
+                    if (pixels[i].a < alphaClip) {
+                        reinterpret_cast<uint32_t&>(pixels[i]) = 0;
+                    }
+                }
+            }
+            return;
+        }
+
         const uint8_t* dataPos = src.getData();
         size_t bpp = getBitsPerPixel(src.format) >> 3;
         for (int32_t i = 0; i < pixC; i++) {
@@ -411,20 +423,20 @@ namespace Projections {
     static void writeFrameData(std::string_view framePath, int32_t index, PrFrame* frames, int32_t layerC, const Stream& stream,
         PBuffers& buffers, bool altTex, float minCompression = 0.25f, uint8_t alphaClip = 8) {
 
-        static TaskProgress taskP{};
-        taskP.preview = &buffers.frameBuffer;
-
         auto& frame = frames[index];
         PFramePath* path = (altTex ? &frame.pathE : &frame.path);
         CRCBlocks* crcBlock = (altTex ? &frame.block[1] : &frame.block[0]);
 
+        TaskManager::waitForBuffer();
         if (path->isValid() && 
             path->decodeImage(buffers.readBuffer, framePath) &&
             buffers.frameBuffer.doAllocate(buffers.readBuffer.width, buffers.readBuffer.height, TextureFormat::RGBA32)) {
             Color32* pixels = reinterpret_cast<Color32*>(buffers.frameBuffer.data);
             readAsColor32(buffers.readBuffer, pixels, alphaClip);
 
-            TaskManager::reportProgress(taskP, TASK_COPY_PREVIEW);
+            REPORT_PROGRESS(
+                TaskManager::reportPreview(&buffers.frameBuffer);
+            );
 
             bool isEmpty = !crcBlock->from(buffers.frameBuffer.data, buffers.frameBuffer.getSize());
             if (isEmpty) {
@@ -569,11 +581,13 @@ namespace Projections {
         buffers.palette.clear();
         buffers.noPalette = false;
 
-        static TaskProgress progress{};
+        int32_t lrC = Math::max<int32_t>(int32_t(layers.size()), 1);
+        int32_t frameCount = int32_t(frames.size() / lrC);
 
-        progress.subProgress.setProgress(0.0f);
-        TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
-
+        REPORT_PROGRESS(
+            TaskManager::regLevel(2);
+            TaskManager::reportProgress(2, 0.0, 0.0, frameCount);
+        );
         std::string framePath = IO::combine(material.root, this->framePath);
 
         material.write(stream);
@@ -597,24 +611,29 @@ namespace Projections {
         for (auto& lr : layers) {
             lr.write(stream);
         }
-
-        int32_t lrC = Math::max<int32_t>(int32_t(layers.size()), 1);
-        int32_t frameCount = int32_t(frames.size() / lrC);
         stream.writeValue(frameCount);
 
-        float lenF = Math::max<float>(float(frameCount), 1.0f);
         for (int32_t i = 0, j = 0; i < frameCount; i++, j += lrC) {
             if (TaskManager::isSkipping()) {
+                REPORT_PROGRESS(
+                    TaskManager::reportProgress(2, frameCount);
+                    TaskManager::unregLevel(2);
+                );
                 return false;
             }
 
-            if (TaskManager::isCancelling()) {
+            if (TaskManager::isCanceling()) {
+                REPORT_PROGRESS(
+                    TaskManager::reportProgress(2, frameCount);
+                    TaskManager::unregLevel(2);
+                );
                 return false;
             }
 
             writeFrame(framePath, buffers, j, frames.data(), lrC, stream,  minCompression, 8);
-            progress.subProgress.setProgress((i + 1.0f) / lenF);
-            TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
+            REPORT_PROGRESS(
+                TaskManager::reportIncrement(2);
+            );
         }
         stream.writeValue(buffers.palette.count);
         for (size_t i = 0; i < buffers.palette.count; i++) {
@@ -622,8 +641,10 @@ namespace Projections {
         }
         stream.write(buffers.palette.colors, sizeof(Color32) * buffers.palette.count, false);
 
-        progress.subProgress.setProgress(1.0f);
-        TaskManager::reportProgress(progress, TASK_COPY_SUBPROGRESS);
+        REPORT_PROGRESS(
+            TaskManager::reportProgress(2, frameCount);
+            TaskManager::unregLevel(2);
+        );
         stream.writeValue<int32_t>(int32_t(masks.size()));
         for (size_t i = 0; i < masks.size(); i++) {
             masks[i].write(stream, material.root, width, height);

@@ -1609,12 +1609,12 @@ namespace Projections {
     struct DropSource {
         uint8_t uiFlags{};
 
-        PoolType pool;
-        ItemConditions conditions;
-        DropFlags flags;
-        int32_t stack;
-        int32_t id;
-        std::string strId;
+        PoolType pool{};
+        ItemConditions conditions{};
+        DropFlags flags{};
+        int32_t stack{};
+        int32_t id{};
+        std::string strId{};
 
         void reset() {
             pool = PoolType::Pool_None;
